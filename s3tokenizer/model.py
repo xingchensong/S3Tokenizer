@@ -25,6 +25,8 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
 
+from .utils import onnx2torch
+
 
 @dataclass
 class ModelDimensions:
@@ -161,7 +163,6 @@ class AudioEncoder(nn.Module):
         self.blocks: Iterable[ResidualAttentionBlock] = nn.ModuleList(
             [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]
         )
-        self.ln_post = LayerNorm(n_state)
 
     def forward(self, x: Tensor):
         """
@@ -178,7 +179,6 @@ class AudioEncoder(nn.Module):
         for block in self.blocks:
             x = block(x)
 
-        x = self.ln_post(x)
         return x
 
 
@@ -278,7 +278,7 @@ class S3Tokenizer(nn.Module):
         dims (ModelDimensions): Dimension
     """
 
-    def __init__(self, dims: ModelDimensions):
+    def __init__(self, dims: ModelDimensions = ModelDimensions()):
         super().__init__()
         self.dims = dims
         self.encoder = AudioEncoder(
@@ -302,3 +302,7 @@ class S3Tokenizer(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    def init_tokenizer(self, onnx_path: str):
+        ckpt = onnx2torch(onnx_path, None, False)
+        self.load_state_dict(ckpt, strict=True)
