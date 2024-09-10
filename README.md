@@ -11,7 +11,7 @@ However, as indicated in this [[issue]](https://github.com/FunAudioLLM/CosyVoice
 
 This repository undertakes a reverse engineering of the S3Tokenizer, offering:
 1. A pure PyTorch implementation of S3Tokenizer, compatible with initializing weights from the released ONNX file.
-2. High-throughput batch inference, achieving a 30x speedup compared to the original inference pipeline in [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py).
+2. High-throughput batch inference, achieving a ??x speedup compared to the original inference pipeline in [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py).
 3. The capability to perform online speech code extraction during SpeechLLM training.
 
 # Setup
