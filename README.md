@@ -10,7 +10,7 @@ S3Tokenizer was initially introduced in CosyVoice [[Paper]](https://arxiv.org/ab
 However, as indicated in this [[issue]](https://github.com/FunAudioLLM/CosyVoice/issues/70), the authors have no intention to open-source the PyTorch implementation of the S3Tokenizer, and only plan to release an ONNX file. Additionally, users aiming to fine-tune CosyVoice must extract speech codes offline, with the batch size restricted to 1, a process that is notably time-consuming (refer to [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py)).
 
 This repository undertakes a reverse engineering of the S3Tokenizer, offering:
-1. A pure PyTorch implementation of S3Tokenizer, compatible with initializing weights from the released ONNX file.
+1. A pure PyTorch implementation of S3Tokenizer (see [[model.py]](https://github.com/xingchensong/S3Tokenizer/blob/main/s3tokenizer/model.py)), compatible with initializing weights from the released ONNX file (see [[utils.py::onnx2torch()]](https://github.com/xingchensong/S3Tokenizer/blob/main/s3tokenizer/utils.py)).
 2. High-throughput batch inference, achieving a ??x speedup compared to the original inference pipeline in [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py).
 3. The capability to perform online speech code extraction during SpeechLLM training.
 
@@ -23,13 +23,12 @@ pip install s3tokenizer
 # Usage-1: Offline batch inference
 
 ```py
-import torch
 import s3tokenizer
 
 tokenizer = s3tokenizer.load_model("speech_tokenizer_v1").cuda()
 
-mels, mels_lens = [], []
-wav_paths = ["path_to_wav1", "path_to_wav2", ... "path_to_wavn"]
+mels = []
+wav_paths = ["s3tokenizer/assets/BAC009S0724W0121.wav", "s3tokenizer/assets/BAC009S0724W0122.wav"]
 for wav_path in wav_paths:
     audio = s3tokenizer.load_audio(wav_path)
     mels.append(s3tokenizer.log_mel_spectrogram(audio))
@@ -91,3 +90,9 @@ class SpeechLLM(nn.Module):
 ```sh
 s3tokenizer --wav_scp "xxx.scp" --device "cuda:0" --output "yyy.list" --batch_size 32
 ```
+
+# TODO
+
+- [x] Usage-1: Offline batch inference
+- [ ] Usage-2: Online speech code extraction
+- [ ] Command-line
