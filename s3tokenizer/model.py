@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
 
-from .utils import onnx2torch
+from .utils import onnx2torch, make_non_pad_mask, mask_to_bias
 
 
 @dataclass
@@ -82,21 +82,11 @@ class MultiHeadAttention(nn.Module):
     def forward(
         self,
         x: Tensor,
-        xa: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
-        kv_cache: Optional[dict] = None,
     ):
         q = self.query(x)
-
-        if kv_cache is None or xa is None or self.key not in kv_cache:
-            # hooks, if installed (i.e. kv_cache is not None), will prepend the cached kv tensors;
-            # otherwise, perform key/value projections for self- or cross-attention as usual.
-            k = self.key(x if xa is None else xa)
-            v = self.value(x if xa is None else xa)
-        else:
-            # for cross-attention, calculate keys and values once and reuse in subsequent calls.
-            k = kv_cache[self.key]
-            v = kv_cache[self.value]
+        k = self.key(x)
+        v = self.value(x)
 
         wv, qk = self.qkv_attention(q, k, v, mask)
         return self.out(wv), qk
@@ -104,15 +94,15 @@ class MultiHeadAttention(nn.Module):
     def qkv_attention(
         self, q: Tensor, k: Tensor, v: Tensor, mask: Optional[Tensor] = None
     ):
-        n_batch, n_ctx, n_state = q.shape
-        scale = (n_state // self.n_head) ** -0.25
+        _, T, D = q.shape
+        scale = (D // self.n_head) ** -0.25
         q = q.view(*q.shape[:2], self.n_head, -1).permute(0, 2, 1, 3) * scale
         k = k.view(*k.shape[:2], self.n_head, -1).permute(0, 2, 3, 1) * scale
         v = v.view(*v.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
 
-        qk = q @ k
+        qk = q @ k  # (B, T, T)
         if mask is not None:
-            qk = qk + mask[:n_ctx, :n_ctx]
+            qk = qk + mask
         qk = qk.float()
 
         w = F.softmax(qk, dim=-1).to(q.dtype)
@@ -120,16 +110,11 @@ class MultiHeadAttention(nn.Module):
 
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, n_state: int, n_head: int, cross_attention: bool = False):
+    def __init__(self, n_state: int, n_head: int):
         super().__init__()
 
         self.attn = MultiHeadAttention(n_state, n_head)
         self.attn_ln = LayerNorm(n_state)
-
-        self.cross_attn = (
-            MultiHeadAttention(n_state, n_head) if cross_attention else None
-        )
-        self.cross_attn_ln = LayerNorm(n_state) if cross_attention else None
 
         n_mlp = n_state * 4
         self.mlp = nn.Sequential(
@@ -140,13 +125,9 @@ class ResidualAttentionBlock(nn.Module):
     def forward(
         self,
         x: Tensor,
-        xa: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
-        kv_cache: Optional[dict] = None,
     ):
-        x = x + self.attn(self.attn_ln(x), mask=mask, kv_cache=kv_cache)[0]
-        if self.cross_attn:
-            x = x + self.cross_attn(self.cross_attn_ln(x), xa, kv_cache=kv_cache)[0]
+        x = x + self.attn(self.attn_ln(x), mask=mask)[0]
         x = x + self.mlp(self.mlp_ln(x))
         return x
 
@@ -164,20 +145,24 @@ class AudioEncoder(nn.Module):
             [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]
         )
 
-    def forward(self, x: Tensor):
+    def forward(self, x: Tensor, x_len: Tensor) -> Tensor:
         """
-        x : torch.Tensor, shape = (batch_size, n_mels, n_ctx)
+        x : torch.Tensor, shape = (batch_size, n_mels, T)
             the mel spectrogram of the audio
+        x_len: torch.Tensor, shape = (batch_size,)
+            length of each audio in x
         """
+        T = x.size(-1)
         x = F.gelu(self.conv1(x))
         x = F.gelu(self.conv2(x))
-        x = x.permute(0, 2, 1)
+        x = x.permute(0, 2, 1)  # (B, T // 2, n_state)
+        mask = make_non_pad_mask(x_len, T).unsqueeze(1)  # (B, 1, T)
+        mask = mask_to_bias(mask[:, :, (T + 1) % 2::2], x.dtype)  # (B, 1, T // 2)
 
-        assert x.shape[1:] == self.positional_embedding.shape, "incorrect audio shape"
-        x = (x + self.positional_embedding).to(x.dtype)
+        x = (x + self.positional_embedding[:x.shape[1], :]).to(x.dtype)
 
         for block in self.blocks:
-            x = block(x)
+            x = block(x, mask)
 
         return x
 
@@ -199,12 +184,12 @@ class EuclideanCodebook(nn.Module):
         self.register_buffer("embed", embed)
 
     @torch.inference_mode()
-    def preprocess(self, x):
+    def preprocess(self, x: Tensor) -> Tensor:
         x = rearrange(x, "... d -> (...) d")
         return x
 
     @torch.inference_mode()
-    def quantize(self, x):
+    def quantize(self, x: Tensor) -> Tensor:
         embed = self.embed.t()
         dist = -(x.pow(2).sum(1, keepdim=True) - 2 * x @ embed +
                  embed.pow(2).sum(0, keepdim=True))
@@ -216,12 +201,12 @@ class EuclideanCodebook(nn.Module):
         return embed_ind.view(*shape[:-1])
 
     @torch.inference_mode()
-    def dequantize(self, embed_ind):
+    def dequantize(self, embed_ind: Tensor) -> Tensor:
         quantize = F.embedding(embed_ind, self.embed)
         return quantize
 
     @torch.inference_mode()
-    def encode(self, x):
+    def encode(self, x: Tensor) -> Tensor:
         shape = x.shape
         # pre-process
         x = self.preprocess(x)
@@ -232,7 +217,7 @@ class EuclideanCodebook(nn.Module):
         return embed_ind
 
     @torch.inference_mode()
-    def decode(self, embed_ind):
+    def decode(self, embed_ind: Tensor) -> Tensor:
         quantize = self.dequantize(embed_ind)
         return quantize
 
@@ -259,14 +244,13 @@ class VectorQuantization(nn.Module):
         return self._codebook.embed
 
     @torch.inference_mode()
-    def encode(self, x):
-        x = F.normalize(x, p=2, dim=1)
-        x = rearrange(x, "b d n -> b n d")
+    def encode(self, x: Tensor) -> Tensor:
+        x = F.normalize(x, p=2, dim=-1)
         embed_in = self._codebook.encode(x)
         return embed_in
 
     @torch.inference_mode()
-    def decode(self, embed_ind):
+    def decode(self, embed_ind: Tensor) -> Tensor:
         quantize = self._codebook.decode(embed_ind)
         quantize = rearrange(quantize, "b n d -> b d n")
         return quantize
@@ -295,14 +279,18 @@ class S3Tokenizer(nn.Module):
 
     @torch.inference_mode()
     def quantize(
-        self, mel: torch.Tensor, mel_len: torch.Tensor
-    ) -> torch.Tensor:
-        return self.quantizer(self.encoder(mel))
+        self, mel: Tensor, mel_len: Tensor
+    ) -> Tensor:
+        return self.quantizer.encode(self.encoder(mel, mel_len))
 
     @property
     def device(self):
         return next(self.parameters()).device
 
-    def init_tokenizer(self, onnx_path: str):
+    def init_from_onnx(self, onnx_path: str):
         ckpt = onnx2torch(onnx_path, None, False)
+        self.load_state_dict(ckpt, strict=True)
+
+    def init_from_pt(self, ckpt_path: str):
+        ckpt = torch.load(ckpt_path, map_location="cpu", mmap=True)
         self.load_state_dict(ckpt, strict=True)
