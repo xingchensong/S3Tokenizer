@@ -32,16 +32,16 @@ mels, mels_lens = [], []
 wav_paths = ["path_to_wav1", "path_to_wav2", ... "path_to_wavn"]
 for wav_path in wav_paths:
     audio = s3tokenizer.load_audio(wav_path)
-    mel = s3tokenizer.log_mel_spectrogram(audio).unsqueeze(0)
-    mels.append(mel)
-    mels_lens.append(mel.size(-1))
-mels = torch.cat(mels, dim=0).cuda()
-mels_lens = torch.tensor(mels_lens).cuda()
-codes = tokenizer.quantize(mels, mels_lens)
+    mels.append(s3tokenizer.log_mel_spectrogram(audio))
+mels, mels_lens = s3tokenizer.padding(mels)
+codes, codes_lens = tokenizer.quantize(mels.cuda(), mels_lens.cuda())
+
+for i in range(len(wav_paths)):
+    print(codes[i, :codes_lens[i].item()])
 ```
 
 
-# Usage-2: Online speech code extraction
+# Usage-2: Online speech code extraction (TODO)
 
 <table>
 <tr>
@@ -85,3 +85,9 @@ class SpeechLLM(nn.Module):
 </td>
 </tr>
 </table>
+
+# Usage-3: Command-line (TODO)
+
+```sh
+s3tokenizer --wav_scp "xxx.scp" --device "cuda:0" --output "yyy.list"
+```

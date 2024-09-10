@@ -17,7 +17,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Tuple, Iterable, Optional
 
 import numpy as np
 import torch
@@ -100,7 +100,7 @@ class MultiHeadAttention(nn.Module):
         k = k.view(*k.shape[:2], self.n_head, -1).permute(0, 2, 3, 1) * scale
         v = v.view(*v.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
 
-        qk = q @ k  # (B, T, T)
+        qk = q @ k  # (B, n_head, T, T)
         if mask is not None:
             qk = qk + mask
         qk = qk.float()
@@ -145,7 +145,7 @@ class AudioEncoder(nn.Module):
             [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]
         )
 
-    def forward(self, x: Tensor, x_len: Tensor) -> Tensor:
+    def forward(self, x: Tensor, x_len: Tensor) -> Tuple[Tensor, Tensor]:
         """
         x : torch.Tensor, shape = (batch_size, n_mels, T)
             the mel spectrogram of the audio
@@ -162,9 +162,10 @@ class AudioEncoder(nn.Module):
         x = (x + self.positional_embedding[:x.shape[1], :]).to(x.dtype)
 
         for block in self.blocks:
-            x = block(x, mask)
+            x = block(x, mask.unsqueeze(1))
 
-        return x
+        x_len = (x_len + 1) // 2
+        return x, x_len
 
 
 class EuclideanCodebook(nn.Module):
@@ -280,8 +281,10 @@ class S3Tokenizer(nn.Module):
     @torch.inference_mode()
     def quantize(
         self, mel: Tensor, mel_len: Tensor
-    ) -> Tensor:
-        return self.quantizer.encode(self.encoder(mel, mel_len))
+    ) -> Tuple[Tensor, Tensor]:
+        hidden, code_len = self.encoder(mel, mel_len)
+        code = self.quantizer.encode(hidden)
+        return code, code_len
 
     @property
     def device(self):

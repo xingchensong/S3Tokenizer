@@ -17,12 +17,13 @@
 """
 
 
-from typing import Union, Optional
+from typing import List, Union, Optional
 from functools import lru_cache
 
 import os
 import torch
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
 import torchaudio
 import onnx
 import numpy as np
@@ -287,3 +288,29 @@ def mask_to_bias(mask: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     #     chunk_masks = (1.0 - chunk_masks) * torch.finfo(dtype).min
     mask = (1.0 - mask) * -1.0e+10
     return mask
+
+
+def padding(data: List[torch.Tensor]):
+    """ Padding the data into batch data
+
+    Parameters
+    ----------
+        data: List[Tensor], shape of Tensor (128, T)
+
+    Returns:
+    -------
+        feats, feats lengths
+    """
+    sample = data
+    assert isinstance(sample, list)
+    feats_length = torch.tensor([x.size(1) for x in sample],
+                                dtype=torch.int32)
+    order = torch.argsort(feats_length, descending=True)
+    feats_lengths = torch.tensor([sample[i].size(1) for i in order],
+                                 dtype=torch.int32)
+    sorted_feats = [sample[i].t() for i in order]
+    padded_feats = pad_sequence(sorted_feats,
+                                batch_first=True,
+                                padding_value=0)
+
+    return padded_feats.transpose(1, 2), feats_lengths
