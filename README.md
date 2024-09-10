@@ -89,5 +89,5 @@ class SpeechLLM(nn.Module):
 # Usage-3: Command-line (TODO)
 
 ```sh
-s3tokenizer --wav_scp "xxx.scp" --device "cuda:0" --output "yyy.list"
+s3tokenizer --wav_scp "xxx.scp" --device "cuda:0" --output "yyy.list" --batch_size 32
 ```
