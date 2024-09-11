@@ -50,6 +50,12 @@ s3tokenizer --wav_scp xxx.scp \
             --batch_size 32
 ```
 
+
+
+https://github.com/user-attachments/assets/d37d10fd-0e13-46a3-86b0-4cbec309086f
+
+
+
 ## 2.2 (Multi) GPU batch inference (a.k.a Distributed inference)
 
 ```sh
@@ -61,7 +67,11 @@ torchrun --nproc_per_node=8 --nnodes=1 \
                 --batch_size 32
 ```
 
+
+
 https://github.com/user-attachments/assets/79a3fb11-7199-4ee2-8a35-9682a3b4d94a
+
+
 
 ## 2.3 Performance Benchmark
 
