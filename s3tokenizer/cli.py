@@ -118,27 +118,24 @@ def main():
                             shuffle=False, num_workers=args.num_workers,
                             prefetch_factor=args.prefetch, collate_fn=collate_fn)
     
-    results = {}
     total_steps = len(dataset)
 
     if rank == 0:
         progress_bar = tqdm(total=total_steps, desc="Processing", unit="wavs")
-
+                
+    writer = open(f"{args.output_dir}/part_{rank + 1}_of_{world_size}", "w")
     for keys, mels, mels_lens in dataloader:
         codes, codes_lens = model(mels.to(device), mels_lens.to(device))
         for i, k in enumerate(keys):
-            results[k] = codes[i, :codes_lens[i].item()].tolist()
+            code = codes[i, :codes_lens[i].item()].tolist()
+            writer.write(
+                json.dumps({"key": k, "code": code}, ensure_ascii=False) + "\n")
         if rank == 0:
             progress_bar.update(world_size * len(keys))
 
     if rank == 0:
         progress_bar.close()
-
-    with open(f"{args.output_dir}/part_{rank + 1}_of_{world_size}", "w") as f:
-        for key, code in results.items():
-            f.writelines(
-                json.dumps({"key": key, "code": code}, ensure_ascii=False) + "\n")
-
+    writer.close()
     if args.device == "cuda":
         dist.barrier()
         dist.destroy_process_group()
