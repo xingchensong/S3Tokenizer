@@ -278,6 +278,11 @@ class S3Tokenizer(nn.Module):
             self.dims.n_codebook_size
         )
 
+    def forward(
+        self, mel: Tensor, mel_len: Tensor
+    ) -> Tuple[Tensor, Tensor]:
+        return self.quantize(mel, mel_len)
+
     @torch.inference_mode()
     def quantize(
         self, mel: Tensor, mel_len: Tensor

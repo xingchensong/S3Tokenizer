@@ -303,13 +303,10 @@ def padding(data: List[torch.Tensor]):
     """
     sample = data
     assert isinstance(sample, list)
-    feats_length = torch.tensor([x.size(1) for x in sample],
+    feats_lengths = torch.tensor([s.size(1) for s in sample],
                                 dtype=torch.int32)
-    order = torch.argsort(feats_length, descending=True)
-    feats_lengths = torch.tensor([sample[i].size(1) for i in order],
-                                 dtype=torch.int32)
-    sorted_feats = [sample[i].t() for i in order]
-    padded_feats = pad_sequence(sorted_feats,
+    feats = [s.t() for s in sample]
+    padded_feats = pad_sequence(feats,
                                 batch_first=True,
                                 padding_value=0)
 

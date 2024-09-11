@@ -11,7 +11,7 @@ However, as indicated in this [[issue]](https://github.com/FunAudioLLM/CosyVoice
 
 This repository undertakes a reverse engineering of the S3Tokenizer, offering:
 1. A pure PyTorch implementation of S3Tokenizer (see [[model.py]](https://github.com/xingchensong/S3Tokenizer/blob/main/s3tokenizer/model.py)), compatible with initializing weights from the released ONNX file (see [[utils.py::onnx2torch()]](https://github.com/xingchensong/S3Tokenizer/blob/main/s3tokenizer/utils.py)).
-2. High-throughput batch inference, achieving a ??x speedup compared to the original inference pipeline in [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py).
+2. High-throughput (distributed) batch inference, achieving a ~790x speedup compared to the original inference pipeline in [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py).
 3. The capability to perform online speech code extraction during SpeechLLM training.
 
 # Setup
@@ -39,8 +39,37 @@ for i in range(len(wav_paths)):
     print(codes[i, :codes_lens[i].item()])
 ```
 
+# Usage-2: Distributed offline batch inference via command-line tools
 
-# Usage-2: Online speech code extraction (TODO)
+## 2.1 CPU batch inference
+
+```sh
+s3tokenizer --wav_scp xxx.scp \
+            --device "cpu" \
+            --output_dir "./" \
+            --batch_size 32
+```
+
+## 2.2 (Multi) GPU batch inference (a.k.a Distributed inference)
+
+```sh
+torchrun --nproc_per_node=8 --nnodes=1 \
+     --rdzv_id=2024 --rdzv_backend="c10d" --rdzv_endpoint="localhost:0" \
+    `which s3tokenizer` --wav_scp xxx.scp \
+                --device "cuda" \
+                --output_dir "./" \
+                --batch_size 32
+```
+
+## 2.3 Performance Benchmark
+
+|  Method  | Time cost on Aishell Test Set | Relative speed up |
+|:------:|:----------:|:--------------:|
+|  [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py), cpu |   9 hours    |    ~         |
+|  cpu, batchsize 32  |    1.5h    |    ~6x        |
+|  4 gpus (3090), batchsize 32 per gpu  |   41s    |   ~790x         |
+
+# Usage-3: Online speech code extraction (TODO)
 
 <table>
 <tr>
@@ -85,14 +114,9 @@ class SpeechLLM(nn.Module):
 </tr>
 </table>
 
-# Usage-3: Command-line (TODO)
-
-```sh
-s3tokenizer --wav_scp "xxx.scp" --device "cuda:0" --output "yyy.list" --batch_size 32
-```
 
 # TODO
 
 - [x] Usage-1: Offline batch inference
-- [ ] Usage-2: Online speech code extraction
-- [ ] Command-line
+- [x] Usage-2: Distributed offline batch inference via command-line tools
+- [ ] Usage-3: Online speech code extraction
