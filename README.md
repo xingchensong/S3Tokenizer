@@ -61,6 +61,8 @@ torchrun --nproc_per_node=8 --nnodes=1 \
                 --batch_size 32
 ```
 
+https://github.com/user-attachments/assets/79a3fb11-7199-4ee2-8a35-9682a3b4d94a
+
 ## 2.3 Performance Benchmark
 
 |  Method  | Time cost on Aishell Test Set | Relative speed up |
