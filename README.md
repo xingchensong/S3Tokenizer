@@ -83,7 +83,7 @@ https://github.com/user-attachments/assets/79a3fb11-7199-4ee2-8a35-9682a3b4d94a
 
 The miss rate represents the proportion of tokens that are inconsistent between the batch inference predictions and the ONNX (batch=1) inference predictions.
 
-# Usage-3: Online speech code extraction (TODO)
+# Usage-3: Online speech code extraction
 
 <table>
 <tr>
