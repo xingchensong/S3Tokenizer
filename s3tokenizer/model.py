@@ -302,3 +302,8 @@ class S3Tokenizer(nn.Module):
     def init_from_pt(self, ckpt_path: str):
         ckpt = torch.load(ckpt_path, map_location="cpu", mmap=True)
         self.load_state_dict(ckpt, strict=True)
+
+    def freeze(self):
+        for _, param in self.named_parameters():
+            param.requires_grad = False
+
