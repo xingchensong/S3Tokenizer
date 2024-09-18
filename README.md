@@ -117,10 +117,13 @@ class SpeechLLM(nn.Module):
     def __init__(self, ...):
         ...
         self.speech_tokenizer = s3tokenizer.load_model("speech_tokenizer_v1")
+        self.speech_tokenizer.freeze()
 
     def forward(self, speech: Tensor, speech_lens: Tensor, text_ids: Tensor, ...):
         ...
-        speech_codes = self.speech_tokenizer(speech, speech_lens)
+        speech_codes, speech_codes_lens = self.speech_tokenizer.quantize(speech, speech_lens)
+        speech_codes = speech_codes.clone()  # for backward compatbility
+        speech_codes_lens = speeech_codes_lens.clone()  # for backward compatbility
 ```
 
 </sub>
@@ -133,4 +136,4 @@ class SpeechLLM(nn.Module):
 
 - [x] Usage-1: Offline batch inference
 - [x] Usage-2: Distributed offline batch inference via command-line tools
-- [ ] Usage-3: Online speech code extraction
+- [x] Usage-3: Online speech code extraction
