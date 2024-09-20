@@ -60,7 +60,11 @@ class AudioDataset(Dataset):
         file_path = self.data[idx]
         key = self.keys[idx]
         audio = s3tokenizer.load_audio(file_path)
-        mel = s3tokenizer.log_mel_spectrogram(audio)
+        if audio.shape[0] / 16000 > 30:
+            print(f'do not support extract speech token for audio longer than 30s, file_path: {file_path}')
+            mel = torch.zeros(128, 0)
+        else:
+            mel = s3tokenizer.log_mel_spectrogram(audio)
         return key, mel
 
 
