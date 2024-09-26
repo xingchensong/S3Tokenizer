@@ -88,6 +88,7 @@ def init_distributed():
 
 def get_args():
     parser = argparse.ArgumentParser(description='extract speech code')
+    parser.add_argument('--model', required=True, type=str, choices=["speech_tokenizer_v1", "speech_tokenizer_v1_25hz"], help='model version')
     parser.add_argument('--wav_scp', required=True, type=str, help='each line contains `wav_name wav_path`')
     parser.add_argument('--device', required=True, type=str, choices=["cuda", "cpu"], help='device for inference')
     parser.add_argument('--output_dir', required=True, type=str, help='dir to save result')
@@ -109,7 +110,7 @@ def main():
         world_size, local_rank, rank = 1, 0, 0
 
     device = torch.device(args.device)
-    model = s3tokenizer.load_model("speech_tokenizer_v1").to(device)
+    model = s3tokenizer.load_model(args.model).to(device)
     dataset = AudioDataset(args.wav_scp)
 
     if args.device == "cuda":
@@ -121,12 +122,12 @@ def main():
     dataloader = DataLoader(dataset, batch_size=args.batch_size, sampler=sampler,
                             shuffle=False, num_workers=args.num_workers,
                             prefetch_factor=args.prefetch, collate_fn=collate_fn)
-    
+
     total_steps = len(dataset)
 
     if rank == 0:
         progress_bar = tqdm(total=total_steps, desc="Processing", unit="wavs")
-                
+
     writer = open(f"{args.output_dir}/part_{rank + 1}_of_{world_size}", "w")
     for keys, mels, mels_lens in dataloader:
         codes, codes_lens = model(mels.to(device), mels_lens.to(device))

@@ -134,10 +134,11 @@ class ResidualAttentionBlock(nn.Module):
 
 class AudioEncoder(nn.Module):
     def __init__(
-        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int
+        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int, stride: int,
     ):
         super().__init__()
-        self.conv1 = Conv1d(n_mels, n_state, kernel_size=3, padding=1)
+        self.stride = stride
+        self.conv1 = Conv1d(n_mels, n_state, kernel_size=3, stride=stride, padding=1)
         self.conv2 = Conv1d(n_state, n_state, kernel_size=3, stride=2, padding=1)
         self.register_buffer("positional_embedding", sinusoids(n_ctx, n_state))
 
@@ -157,7 +158,11 @@ class AudioEncoder(nn.Module):
         x = F.gelu(self.conv2(x))
         x = x.permute(0, 2, 1)  # (B, T // 2, n_state)
         mask = make_non_pad_mask(x_len, T).unsqueeze(1)  # (B, 1, T)
-        mask = mask_to_bias(mask[:, :, (T + 1) % 2::2], x.dtype)  # (B, 1, T // 2)
+        mask = mask[:, :, (T + 1) % 2::2]  # (B, 1, T // 2)
+        if self.stride == 2:
+            _T = mask.size(-1)
+            mask = mask[:, :, (_T + 1) % 2::2]  # (B, 1, T // 4)
+        mask = mask_to_bias(mask, x.dtype)
 
         x = (x + self.positional_embedding[:x.shape[1], :]).to(x.dtype)
 
@@ -263,7 +268,7 @@ class S3Tokenizer(nn.Module):
         dims (ModelDimensions): Dimension
     """
 
-    def __init__(self, dims: ModelDimensions = ModelDimensions()):
+    def __init__(self, name: str, dims: ModelDimensions = ModelDimensions()):
         super().__init__()
         self.dims = dims
         self.encoder = AudioEncoder(
@@ -272,6 +277,7 @@ class S3Tokenizer(nn.Module):
             self.dims.n_audio_state,
             self.dims.n_audio_head,
             self.dims.n_audio_layer,
+            2 if name == "speech_tokenizer_v1_25hz" else 1,
         )
         self.quantizer = VectorQuantization(
             self.dims.n_audio_state,

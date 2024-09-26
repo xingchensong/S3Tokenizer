@@ -46,10 +46,10 @@ def _rename_weights(weights_dict: dict):
     for k in weights_dict.keys():
         if "quantizer" in k:  # vq
             if k == "/quantizer/rq/model/layers.0/_codebook/Pow_1":
-                new_weight_dict["quantizer._codebook.embed"] = weights_dict[k] 
+                new_weight_dict["quantizer._codebook.embed"] = weights_dict[k]
         elif "positional_embedding" in k:  # positional emb
             new_weight_dict[k] = weights_dict[k]
-        elif "conv" in k:  # 1/2 subsample
+        elif "conv" in k:  # 1/2 or 1/4 subsample
             new_weight_dict[k] = weights_dict[k]
         else:  # transformer blocks
             assert "blocks" in k
@@ -62,7 +62,7 @@ def _rename_weights(weights_dict: dict):
                 .replace('Add', 'bias')
                 .replace('mlp.mlp', 'mlp')
             )
-            new_weight_dict[f"encoder.{new_k}"] = weights_dict[k] 
+            new_weight_dict[f"encoder.{new_k}"] = weights_dict[k]
     return new_weight_dict
 
 
@@ -93,13 +93,13 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
         for input_name in node.input:
             if input_name in initializer_map:
                 initializer = initializer_map[input_name]
-                if input_name == "onnx::Conv_1519":
+                if input_name == "onnx::Conv_1519" or input_name == "encoders.conv1.weight":
                     weight_name = "encoder.conv1.weight"
-                elif input_name == "onnx::Conv_1520":
+                elif input_name == "onnx::Conv_1520" or input_name == "encoders.conv1.bias":
                     weight_name = "encoder.conv1.bias"
-                elif input_name == "onnx::Conv_1521":
+                elif input_name == "onnx::Conv_1521" or input_name == "encoders.conv2.weight":
                     weight_name = "encoder.conv2.weight"
-                elif input_name == "onnx::Conv_1522":
+                elif input_name == "onnx::Conv_1522" or input_name == "encoders.conv2.bias":
                     weight_name = "encoder.conv2.bias"
                 elif input_name == "encoders.positional_embedding":
                     weight_name = "encoder.positional_embedding"
@@ -218,7 +218,7 @@ def log_mel_spectrogram(
 
 def make_non_pad_mask(lengths: torch.Tensor, max_len: int = 0) -> torch.Tensor:
     """Make mask tensor containing indices of non-padded part.
-    
+
     The sequences in a batch may have different lengths. To enable
     batch computing, padding is need to make all sequence in same
     size. To avoid the padding part pass value to context dependent
@@ -276,8 +276,8 @@ def mask_to_bias(mask: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
                  [1, 1, 1, 0, 0],
                  [1, 1, 0, 0, 0]]
         >>> new_masks = s3tokenizer.mask_to_bias(masks, torch.float32)
-        new_masks = [[-0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00],                                                                                                                                                                                  
-                    [-0.0000e+00, -0.0000e+00, -0.0000e+00, -1.0000e+10, -1.0000e+10],                                                                                                                                                                                  
+        new_masks = [[-0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00],
+                    [-0.0000e+00, -0.0000e+00, -0.0000e+00, -1.0000e+10, -1.0000e+10],
                     [-0.0000e+00, -0.0000e+00, -1.0000e+10, -1.0000e+10, -1.0000e+10]]
     """
     assert mask.dtype == torch.bool
