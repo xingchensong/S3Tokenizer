@@ -53,7 +53,7 @@ def _download(name: str, root: str) -> Union[bytes, str]:
 
     expected_sha256 = _SHA256S[name]
     url = _MODELS[name]
-    download_target = os.path.join(root, os.path.basename(url))
+    download_target = os.path.join(root, f"{name}.onnx")
 
     if os.path.exists(download_target) and not os.path.isfile(download_target):
         raise RuntimeError(f"{download_target} exists and is not a regular file")
