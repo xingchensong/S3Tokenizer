@@ -28,7 +28,7 @@ import s3tokenizer
 tokenizer = s3tokenizer.load_model("speech_tokenizer_v1").cuda()  # or "speech_tokenizer_v1_25hz"
 
 mels = []
-wav_paths = ["s3tokenizer/assets/BAC009S0724W0121.wav", "s3tokenizer/assets/BAC009S0724W0122.wav"]
+wav_paths = ["s3tokenizer/assets/BAC009S0764W0121.wav", "s3tokenizer/assets/BAC009S0764W0122.wav"]
 for wav_path in wav_paths:
     audio = s3tokenizer.load_audio(wav_path)
     mels.append(s3tokenizer.log_mel_spectrogram(audio))
