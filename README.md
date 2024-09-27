@@ -25,10 +25,10 @@ pip install s3tokenizer
 ```py
 import s3tokenizer
 
-tokenizer = s3tokenizer.load_model("speech_tokenizer_v1").cuda()
+tokenizer = s3tokenizer.load_model("speech_tokenizer_v1").cuda()  # or "speech_tokenizer_v1_25hz"
 
 mels = []
-wav_paths = ["s3tokenizer/assets/BAC009S0724W0121.wav", "s3tokenizer/assets/BAC009S0724W0122.wav"]
+wav_paths = ["s3tokenizer/assets/BAC009S0764W0121.wav", "s3tokenizer/assets/BAC009S0764W0122.wav"]
 for wav_path in wav_paths:
     audio = s3tokenizer.load_audio(wav_path)
     mels.append(s3tokenizer.log_mel_spectrogram(audio))
@@ -47,7 +47,8 @@ for i in range(len(wav_paths)):
 s3tokenizer --wav_scp xxx.scp \
             --device "cpu" \
             --output_dir "./" \
-            --batch_size 32
+            --batch_size 32 \
+            --model "speech_tokenizer_v1"  # or "speech_tokenizer_v1_25hz"
 ```
 
 
@@ -64,7 +65,8 @@ torchrun --nproc_per_node=8 --nnodes=1 \
     `which s3tokenizer` --wav_scp xxx.scp \
                 --device "cuda" \
                 --output_dir "./" \
-                --batch_size 32
+                --batch_size 32 \
+                --model "speech_tokenizer_v1"  # or "speech_tokenizer_v1_25hz"
 ```
 
 
@@ -116,7 +118,7 @@ class SpeechLLM(nn.Module):
     ...
     def __init__(self, ...):
         ...
-        self.speech_tokenizer = s3tokenizer.load_model("speech_tokenizer_v1")
+        self.speech_tokenizer = s3tokenizer.load_model("speech_tokenizer_v1")  # or "speech_tokenizer_v1_25hz"
         self.speech_tokenizer.freeze()
 
     def forward(self, speech: Tensor, speech_lens: Tensor, text_ids: Tensor, ...):

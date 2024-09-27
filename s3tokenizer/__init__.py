@@ -39,10 +39,12 @@ from .utils import (
 
 _MODELS = {
     "speech_tokenizer_v1": "https://www.modelscope.cn/models/iic/cosyvoice-300m/resolve/master/speech_tokenizer_v1.onnx",
+    "speech_tokenizer_v1_25hz": "https://www.modelscope.cn/models/iic/CosyVoice-300M-25Hz/resolve/master/speech_tokenizer_v1.onnx",
 }
 
 _SHA256S = {
     "speech_tokenizer_v1": "23b5a723ed9143aebfd9ffda14ac4c21231f31c35ef837b6a13bb9e5488abb1e",
+    "speech_tokenizer_v1_25hz": "56285ddd4a83e883ee0cb9f8d69c1089b53a94b1f78ff7e4a0224a27eb4cb486",
 }
 
 
@@ -51,7 +53,7 @@ def _download(name: str, root: str) -> Union[bytes, str]:
 
     expected_sha256 = _SHA256S[name]
     url = _MODELS[name]
-    download_target = os.path.join(root, os.path.basename(url))
+    download_target = os.path.join(root, f"{name}.onnx")
 
     if os.path.exists(download_target) and not os.path.isfile(download_target):
         raise RuntimeError(f"{download_target} exists and is not a regular file")
@@ -131,7 +133,7 @@ def load_model(
             f"Model {name} not found; available models = {available_models()}"
         )
 
-    model = S3Tokenizer()
+    model = S3Tokenizer(name)
     model.init_from_onnx(checkpoint_file)
 
     return model
