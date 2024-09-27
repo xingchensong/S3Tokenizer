@@ -170,6 +170,8 @@ class AudioEncoder(nn.Module):
             x = block(x, mask.unsqueeze(1))
 
         x_len = (x_len + 1) // 2
+        if self.stride == 2:
+            x_len = (x_len + 1) // 2
         return x, x_len
 
 
