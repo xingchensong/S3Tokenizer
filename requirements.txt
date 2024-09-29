@@ -2,3 +2,5 @@ numpy
 torch
 onnx
 tqdm
+torchaudio
+einops
