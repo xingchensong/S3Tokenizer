@@ -134,7 +134,13 @@ class ResidualAttentionBlock(nn.Module):
 
 class AudioEncoder(nn.Module):
     def __init__(
-        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int, stride: int,
+        self,
+        n_mels: int,
+        n_ctx: int,
+        n_state: int,
+        n_head: int,
+        n_layer: int,
+        stride: int,
     ):
         super().__init__()
         self.stride = stride
@@ -158,13 +164,13 @@ class AudioEncoder(nn.Module):
         x = F.gelu(self.conv2(x))
         x = x.permute(0, 2, 1)  # (B, T // 2, n_state)
         mask = make_non_pad_mask(x_len, T).unsqueeze(1)  # (B, 1, T)
-        mask = mask[:, :, (T + 1) % 2::2]  # (B, 1, T // 2)
+        mask = mask[:, :, (T + 1) % 2 :: 2]  # (B, 1, T // 2)
         if self.stride == 2:
             _T = mask.size(-1)
-            mask = mask[:, :, (_T + 1) % 2::2]  # (B, 1, T // 4)
+            mask = mask[:, :, (_T + 1) % 2 :: 2]  # (B, 1, T // 4)
         mask = mask_to_bias(mask, x.dtype)
 
-        x = (x + self.positional_embedding[:x.shape[1], :]).to(x.dtype)
+        x = (x + self.positional_embedding[: x.shape[1], :]).to(x.dtype)
 
         for block in self.blocks:
             x = block(x, mask.unsqueeze(1))
@@ -182,10 +188,7 @@ class EuclideanCodebook(nn.Module):
         codebook_size (int): Codebook size.
     """
 
-    def __init__(
-            self,
-            dim: int,
-            codebook_size: int):
+    def __init__(self, dim: int, codebook_size: int):
         super().__init__()
         embed = torch.zeros(codebook_size, dim)
         self.codebook_size = codebook_size
@@ -199,8 +202,11 @@ class EuclideanCodebook(nn.Module):
     @torch.inference_mode()
     def quantize(self, x: Tensor) -> Tensor:
         embed = self.embed.t()
-        dist = -(x.pow(2).sum(1, keepdim=True) - 2 * x @ embed +
-                 embed.pow(2).sum(0, keepdim=True))
+        dist = -(
+            x.pow(2).sum(1, keepdim=True)
+            - 2 * x @ embed
+            + embed.pow(2).sum(0, keepdim=True)
+        )
         embed_ind = dist.max(dim=-1).indices
         return embed_ind
 
@@ -237,14 +243,9 @@ class VectorQuantization(nn.Module):
         codebook_size (int): Codebook size
     """
 
-    def __init__(
-            self,
-            dim: int,
-            codebook_size: int):
+    def __init__(self, dim: int, codebook_size: int):
         super().__init__()
-        self._codebook = EuclideanCodebook(
-            dim=dim,
-            codebook_size=codebook_size)
+        self._codebook = EuclideanCodebook(dim=dim, codebook_size=codebook_size)
         self.codebook_size = codebook_size
 
     @property
@@ -282,19 +283,14 @@ class S3Tokenizer(nn.Module):
             2 if name == "speech_tokenizer_v1_25hz" else 1,
         )
         self.quantizer = VectorQuantization(
-            self.dims.n_audio_state,
-            self.dims.n_codebook_size
+            self.dims.n_audio_state, self.dims.n_codebook_size
         )
 
-    def forward(
-        self, mel: Tensor, mel_len: Tensor
-    ) -> Tuple[Tensor, Tensor]:
+    def forward(self, mel: Tensor, mel_len: Tensor) -> Tuple[Tensor, Tensor]:
         return self.quantize(mel, mel_len)
 
     @torch.inference_mode()
-    def quantize(
-        self, mel: Tensor, mel_len: Tensor
-    ) -> Tuple[Tensor, Tensor]:
+    def quantize(self, mel: Tensor, mel_len: Tensor) -> Tuple[Tensor, Tensor]:
         hidden, code_len = self.encoder(mel, mel_len)
         code = self.quantizer.encode(hidden)
         return code, code_len
@@ -314,4 +310,3 @@ class S3Tokenizer(nn.Module):
     def freeze(self):
         for _, param in self.named_parameters():
             param.requires_grad = False
-

@@ -56,7 +56,7 @@ class AudioDataset(Dataset):
     def __getitem__(self, idx):
         cut = self.data[idx]
         key = cut.id
-        audio = cut.load_audio().squeeze()
+        audio = cut.resample(16000).load_audio().squeeze()
         mel = s3tokenizer.log_mel_spectrogram(audio)
         return key, mel
 

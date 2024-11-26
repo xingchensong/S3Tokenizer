@@ -55,12 +55,12 @@ def _rename_weights(weights_dict: dict):
             assert "blocks" in k
             new_k = (
                 k[1:]
-                .replace('/', '.')
-                .replace('MatMul', 'weight')
-                .replace('Add_1', 'bias')
-                .replace('Mul', 'weight')
-                .replace('Add', 'bias')
-                .replace('mlp.mlp', 'mlp')
+                .replace("/", ".")
+                .replace("MatMul", "weight")
+                .replace("Add_1", "bias")
+                .replace("Mul", "weight")
+                .replace("Add", "bias")
+                .replace("mlp.mlp", "mlp")
             )
             new_weight_dict[f"encoder.{new_k}"] = weights_dict[k]
     return new_weight_dict
@@ -88,18 +88,32 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
     """
     onnx_model = onnx.load(onnx_path)
     weights_dict = {}
-    initializer_map = {initializer.name: initializer for initializer in onnx_model.graph.initializer}
+    initializer_map = {
+        initializer.name: initializer for initializer in onnx_model.graph.initializer
+    }
     for node in onnx_model.graph.node:
         for input_name in node.input:
             if input_name in initializer_map:
                 initializer = initializer_map[input_name]
-                if input_name == "onnx::Conv_1519" or input_name == "encoders.conv1.weight":
+                if (
+                    input_name == "onnx::Conv_1519"
+                    or input_name == "encoders.conv1.weight"
+                ):
                     weight_name = "encoder.conv1.weight"
-                elif input_name == "onnx::Conv_1520" or input_name == "encoders.conv1.bias":
+                elif (
+                    input_name == "onnx::Conv_1520"
+                    or input_name == "encoders.conv1.bias"
+                ):
                     weight_name = "encoder.conv1.bias"
-                elif input_name == "onnx::Conv_1521" or input_name == "encoders.conv2.weight":
+                elif (
+                    input_name == "onnx::Conv_1521"
+                    or input_name == "encoders.conv2.weight"
+                ):
                     weight_name = "encoder.conv2.weight"
-                elif input_name == "onnx::Conv_1522" or input_name == "encoders.conv2.bias":
+                elif (
+                    input_name == "onnx::Conv_1522"
+                    or input_name == "encoders.conv2.bias"
+                ):
                     weight_name = "encoder.conv2.bias"
                 elif input_name == "encoders.positional_embedding":
                     weight_name = "encoder.positional_embedding"
@@ -108,7 +122,10 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
                 weight_array = onnx.numpy_helper.to_array(initializer).copy()
                 weight_array.flags.writeable = True
                 weight_tensor = torch.from_numpy(weight_array)
-                if len(weight_tensor.shape) > 2 or weight_name == "encoder.positional_embedding":
+                if (
+                    len(weight_tensor.shape) > 2
+                    or weight_name == "encoder.positional_embedding"
+                ):
                     weights_dict[weight_name] = weight_tensor
                 else:
                     weights_dict[weight_name] = weight_tensor.t()
@@ -246,10 +263,7 @@ def make_non_pad_mask(lengths: torch.Tensor, max_len: int = 0) -> torch.Tensor:
     """
     batch_size = lengths.size(0)
     max_len = max_len if max_len > 0 else lengths.max().item()
-    seq_range = torch.arange(0,
-                             max_len,
-                             dtype=torch.int64,
-                             device=lengths.device)
+    seq_range = torch.arange(0, max_len, dtype=torch.int64, device=lengths.device)
     seq_range_expand = seq_range.unsqueeze(0).expand(batch_size, max_len)
     seq_length_expand = lengths.unsqueeze(-1)
     mask = seq_range_expand >= seq_length_expand
@@ -286,12 +300,12 @@ def mask_to_bias(mask: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     # attention mask bias
     # NOTE(Mddct): torch.finfo jit issues
     #     chunk_masks = (1.0 - chunk_masks) * torch.finfo(dtype).min
-    mask = (1.0 - mask) * -1.0e+10
+    mask = (1.0 - mask) * -1.0e10
     return mask
 
 
 def padding(data: List[torch.Tensor]):
-    """ Padding the data into batch data
+    """Padding the data into batch data
 
     Parameters
     ----------
@@ -303,11 +317,8 @@ def padding(data: List[torch.Tensor]):
     """
     sample = data
     assert isinstance(sample, list)
-    feats_lengths = torch.tensor([s.size(1) for s in sample],
-                                dtype=torch.int32)
+    feats_lengths = torch.tensor([s.size(1) for s in sample], dtype=torch.int32)
     feats = [s.t() for s in sample]
-    padded_feats = pad_sequence(feats,
-                                batch_first=True,
-                                padding_value=0)
+    padded_feats = pad_sequence(feats, batch_first=True, padding_value=0)
 
     return padded_feats.transpose(1, 2), feats_lengths
