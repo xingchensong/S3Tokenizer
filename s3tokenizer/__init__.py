@@ -33,7 +33,7 @@ from .utils import (
     mask_to_bias,
     log_mel_spectrogram,
     load_audio,
-    padding
+    padding,
 )
 
 
@@ -122,7 +122,9 @@ def load_model(
 
     if download_root is None:
         default = os.path.join(os.path.expanduser("~"), ".cache")
-        download_root = os.path.join(os.getenv("XDG_CACHE_HOME", default), "s3tokenizer")
+        download_root = os.path.join(
+            os.getenv("XDG_CACHE_HOME", default), "s3tokenizer"
+        )
 
     if name in _MODELS:
         checkpoint_file = _download(name, download_root)
