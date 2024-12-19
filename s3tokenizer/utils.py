@@ -43,9 +43,17 @@ def _rename_weights(weights_dict: dict):
     """
     new_weight_dict = {}
     for k in weights_dict.keys():
-        if "quantizer" in k:  # vq
+        if "quantizer" in k:  # vq or fsq
             if k == "/quantizer/rq/model/layers.0/_codebook/Pow_1":
                 new_weight_dict["quantizer._codebook.embed"] = weights_dict[k]
+            elif k == 'quantizer.project_in.bias':
+                new_weight_dict[
+                    "quantizer._codebook.project_down.bias"] = weights_dict[k]
+            elif k == 'onnx::MatMul_2536':
+                new_weight_dict[
+                    "quantizer._codebook.project_down.weight"] = weights_dict[
+                        k]
+
         elif "positional_embedding" in k:  # positional emb
             new_weight_dict[k] = weights_dict[k]
         elif "conv" in k:  # 1/2 or 1/4 subsample
@@ -90,17 +98,29 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
         for input_name in node.input:
             if input_name in initializer_map:
                 initializer = initializer_map[input_name]
-                if (input_name == "onnx::Conv_1519"
-                        or input_name == "encoders.conv1.weight"):
+                if input_name in [
+                        "onnx::Conv_1519",
+                        "encoders.conv1.weight",
+                        "onnx::Conv_2216",
+                ]:  # v1_50hz, v1_25hz, v2_25hz
                     weight_name = "encoder.conv1.weight"
-                elif (input_name == "onnx::Conv_1520"
-                      or input_name == "encoders.conv1.bias"):
+                elif input_name in [
+                        "onnx::Conv_1520",
+                        "encoders.conv1.bias",
+                        "onnx::Conv_2217",
+                ]:  # v1_50hz, v1_25hz, v2_25hz
                     weight_name = "encoder.conv1.bias"
-                elif (input_name == "onnx::Conv_1521"
-                      or input_name == "encoders.conv2.weight"):
+                elif input_name in [
+                        "onnx::Conv_1521",
+                        "encoders.conv2.weight",
+                        "onnx::Conv_2218",
+                ]:
                     weight_name = "encoder.conv2.weight"
-                elif (input_name == "onnx::Conv_1522"
-                      or input_name == "encoders.conv2.bias"):
+                elif input_name in [
+                        "onnx::Conv_1522",
+                        "encoders.conv2.bias",
+                        "onnx::Conv_2219",
+                ]:
                     weight_name = "encoder.conv2.bias"
                 elif input_name == "encoders.positional_embedding":
                     weight_name = "encoder.positional_embedding"
@@ -109,11 +129,13 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
                 weight_array = onnx.numpy_helper.to_array(initializer).copy()
                 weight_array.flags.writeable = True
                 weight_tensor = torch.from_numpy(weight_array)
-                if len(weight_tensor.shape
-                       ) > 2 or weight_name == "encoder.positional_embedding":
+                if len(weight_tensor.shape) > 2 or weight_name in [
+                        "encoder.positional_embedding"
+                ]:
                     weights_dict[weight_name] = weight_tensor
                 else:
                     weights_dict[weight_name] = weight_tensor.t()
+
     new_weights_dict = _rename_weights(weights_dict)
     if verbose:
         for k, v in new_weights_dict.items():

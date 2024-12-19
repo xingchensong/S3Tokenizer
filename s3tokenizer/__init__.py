@@ -39,6 +39,9 @@ _MODELS = {
     "speech_tokenizer_v1_25hz":
     "https://www.modelscope.cn/models/iic/CosyVoice-300M-25Hz/"
     "resolve/master/speech_tokenizer_v1.onnx",
+    "speech_tokenizer_v2_25hz":
+    "https://www.modelscope.cn/models/iic/CosyVoice2-0.5B/"
+    "resolve/master/speech_tokenizer_v2.onnx",
 }
 
 _SHA256S = {
@@ -46,6 +49,8 @@ _SHA256S = {
     "23b5a723ed9143aebfd9ffda14ac4c21231f31c35ef837b6a13bb9e5488abb1e",
     "speech_tokenizer_v1_25hz":
     "56285ddd4a83e883ee0cb9f8d69c1089b53a94b1f78ff7e4a0224a27eb4cb486",
+    "speech_tokenizer_v2_25hz":
+    "d43342aa12163a80bf07bffb94c9de2e120a8df2f9917cd2f642e7f4219c6f71",
 }
 
 
