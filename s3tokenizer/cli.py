@@ -30,19 +30,20 @@ torchrun --nproc_per_node=8 --nnodes=1 \
 
 """
 
-
-import os
-import json
 import argparse
+import json
+import os
+
 import torch
 import torch.distributed as dist
-from torch.utils.data import Dataset, DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from tqdm import tqdm
 
 import s3tokenizer
 
 
 class AudioDataset(Dataset):
+
     def __init__(self, wav_scp):
         self.data = []
         self.keys = []
@@ -61,7 +62,9 @@ class AudioDataset(Dataset):
         key = self.keys[idx]
         audio = s3tokenizer.load_audio(file_path)
         if audio.shape[0] / 16000 > 30:
-            print(f'do not support extract speech token for audio longer than 30s, file_path: {file_path}')
+            print(
+                f'do not support extract speech token for audio longer than 30s, file_path: {file_path}'  # noqa
+            )
             mel = torch.zeros(128, 0)
         else:
             mel = s3tokenizer.log_mel_spectrogram(audio)
@@ -88,13 +91,37 @@ def init_distributed():
 
 def get_args():
     parser = argparse.ArgumentParser(description='extract speech code')
-    parser.add_argument('--model', required=True, type=str, choices=["speech_tokenizer_v1", "speech_tokenizer_v1_25hz"], help='model version')
-    parser.add_argument('--wav_scp', required=True, type=str, help='each line contains `wav_name wav_path`')
-    parser.add_argument('--device', required=True, type=str, choices=["cuda", "cpu"], help='device for inference')
-    parser.add_argument('--output_dir', required=True, type=str, help='dir to save result')
-    parser.add_argument('--batch_size', required=True, type=int, help='batch size (per-device) for inference')
-    parser.add_argument('--num_workers', type=int, default=4, help='workers for dataloader')
-    parser.add_argument('--prefetch', type=int, default=5, help='prefetch for dataloader')
+    parser.add_argument(
+        '--model',
+        required=True,
+        type=str,
+        choices=["speech_tokenizer_v1", "speech_tokenizer_v1_25hz"],
+        help='model version')
+    parser.add_argument('--wav_scp',
+                        required=True,
+                        type=str,
+                        help='each line contains `wav_name wav_path`')
+    parser.add_argument('--device',
+                        required=True,
+                        type=str,
+                        choices=["cuda", "cpu"],
+                        help='device for inference')
+    parser.add_argument('--output_dir',
+                        required=True,
+                        type=str,
+                        help='dir to save result')
+    parser.add_argument('--batch_size',
+                        required=True,
+                        type=int,
+                        help='batch size (per-device) for inference')
+    parser.add_argument('--num_workers',
+                        type=int,
+                        default=4,
+                        help='workers for dataloader')
+    parser.add_argument('--prefetch',
+                        type=int,
+                        default=5,
+                        help='prefetch for dataloader')
     args = parser.parse_args()
     return args
 
@@ -114,14 +141,21 @@ def main():
     dataset = AudioDataset(args.wav_scp)
 
     if args.device == "cuda":
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
-        sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[local_rank])
+        sampler = DistributedSampler(dataset,
+                                     num_replicas=world_size,
+                                     rank=rank)
     else:
         sampler = None
 
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, sampler=sampler,
-                            shuffle=False, num_workers=args.num_workers,
-                            prefetch_factor=args.prefetch, collate_fn=collate_fn)
+    dataloader = DataLoader(dataset,
+                            batch_size=args.batch_size,
+                            sampler=sampler,
+                            shuffle=False,
+                            num_workers=args.num_workers,
+                            prefetch_factor=args.prefetch,
+                            collate_fn=collate_fn)
 
     total_steps = len(dataset)
 
@@ -134,7 +168,10 @@ def main():
         for i, k in enumerate(keys):
             code = codes[i, :codes_lens[i].item()].tolist()
             writer.write(
-                json.dumps({"key": k, "code": code}, ensure_ascii=False) + "\n")
+                json.dumps({
+                    "key": k,
+                    "code": code
+                }, ensure_ascii=False) + "\n")
         if rank == 0:
             progress_bar.update(world_size * len(keys))
 

@@ -13,20 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Modified from https://github.com/openai/whisper/blob/main/whisper/audio.py
-   Add rename_weights() & onnx2torch() & make_non_pad_mask() & mask_to_bias() 
+   Add rename_weights() & onnx2torch() & make_non_pad_mask() & mask_to_bias()
 """
 
-
-from typing import List, Union, Optional
-from functools import lru_cache
-
 import os
+from functools import lru_cache
+from typing import List, Optional, Union
+
+import numpy as np
+import onnx
 import torch
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
 import torchaudio
-import onnx
-import numpy as np
+from torch.nn.utils.rnn import pad_sequence
 
 
 def _rename_weights(weights_dict: dict):
@@ -53,15 +52,10 @@ def _rename_weights(weights_dict: dict):
             new_weight_dict[k] = weights_dict[k]
         else:  # transformer blocks
             assert "blocks" in k
-            new_k = (
-                k[1:]
-                .replace('/', '.')
-                .replace('MatMul', 'weight')
-                .replace('Add_1', 'bias')
-                .replace('Mul', 'weight')
-                .replace('Add', 'bias')
-                .replace('mlp.mlp', 'mlp')
-            )
+            new_k = (k[1:].replace('/', '.').replace(
+                'MatMul', 'weight').replace('Add_1', 'bias').replace(
+                    'Mul', 'weight').replace('Add',
+                                             'bias').replace('mlp.mlp', 'mlp'))
             new_weight_dict[f"encoder.{new_k}"] = weights_dict[k]
     return new_weight_dict
 
@@ -83,23 +77,30 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
 
     Returns
     -------
-    A checkpoint dict containing the weights and their names, if torch_path is None.
-    Otherwise save checkpoint dict to the desired path.
+    A checkpoint dict containing the weights and their names, if torch_path is
+    None. Otherwise save checkpoint dict to the desired path.
     """
     onnx_model = onnx.load(onnx_path)
     weights_dict = {}
-    initializer_map = {initializer.name: initializer for initializer in onnx_model.graph.initializer}
+    initializer_map = {
+        initializer.name: initializer
+        for initializer in onnx_model.graph.initializer
+    }
     for node in onnx_model.graph.node:
         for input_name in node.input:
             if input_name in initializer_map:
                 initializer = initializer_map[input_name]
-                if input_name == "onnx::Conv_1519" or input_name == "encoders.conv1.weight":
+                if (input_name == "onnx::Conv_1519"
+                        or input_name == "encoders.conv1.weight"):
                     weight_name = "encoder.conv1.weight"
-                elif input_name == "onnx::Conv_1520" or input_name == "encoders.conv1.bias":
+                elif (input_name == "onnx::Conv_1520"
+                      or input_name == "encoders.conv1.bias"):
                     weight_name = "encoder.conv1.bias"
-                elif input_name == "onnx::Conv_1521" or input_name == "encoders.conv2.weight":
+                elif (input_name == "onnx::Conv_1521"
+                      or input_name == "encoders.conv2.weight"):
                     weight_name = "encoder.conv2.weight"
-                elif input_name == "onnx::Conv_1522" or input_name == "encoders.conv2.bias":
+                elif (input_name == "onnx::Conv_1522"
+                      or input_name == "encoders.conv2.bias"):
                     weight_name = "encoder.conv2.bias"
                 elif input_name == "encoders.positional_embedding":
                     weight_name = "encoder.positional_embedding"
@@ -108,7 +109,8 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
                 weight_array = onnx.numpy_helper.to_array(initializer).copy()
                 weight_array.flags.writeable = True
                 weight_tensor = torch.from_numpy(weight_array)
-                if len(weight_tensor.shape) > 2 or weight_name == "encoder.positional_embedding":
+                if len(weight_tensor.shape
+                       ) > 2 or weight_name == "encoder.positional_embedding":
                     weights_dict[weight_name] = weight_tensor
                 else:
                     weights_dict[weight_name] = weight_tensor.t()
@@ -161,7 +163,8 @@ def _mel_filters(device, n_mels: int) -> torch.Tensor:
     """
     assert n_mels in {80, 128}, f"Unsupported n_mels: {n_mels}"
 
-    filters_path = os.path.join(os.path.dirname(__file__), "assets", "mel_filters.npz")
+    filters_path = os.path.join(os.path.dirname(__file__), "assets",
+                                "mel_filters.npz")
     with np.load(filters_path, allow_pickle=False) as f:
         return torch.from_numpy(f[f"mel_{n_mels}"]).to(device)
 
@@ -178,7 +181,8 @@ def log_mel_spectrogram(
     Parameters
     ----------
     audio: Union[str, np.ndarray, torch.Tensor], shape = (*)
-        The path to audio or either a NumPy array or Tensor containing the audio waveform in 16 kHz
+        The path to audio or either a NumPy array or Tensor containing the
+        audio waveform in 16 kHz
 
     n_mels: int
         The number of Mel-frequency filters, only 80 is supported
@@ -205,7 +209,7 @@ def log_mel_spectrogram(
         audio = F.pad(audio, (0, padding))
     window = torch.hann_window(400).to(audio.device)
     stft = torch.stft(audio, 400, 160, window=window, return_complex=True)
-    magnitudes = stft[..., :-1].abs() ** 2
+    magnitudes = stft[..., :-1].abs()**2
 
     filters = _mel_filters(audio.device, n_mels)
     mel_spec = filters @ magnitudes
@@ -276,13 +280,15 @@ def mask_to_bias(mask: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
                  [1, 1, 1, 0, 0],
                  [1, 1, 0, 0, 0]]
         >>> new_masks = s3tokenizer.mask_to_bias(masks, torch.float32)
-        new_masks = [[-0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00],
-                    [-0.0000e+00, -0.0000e+00, -0.0000e+00, -1.0000e+10, -1.0000e+10],
-                    [-0.0000e+00, -0.0000e+00, -1.0000e+10, -1.0000e+10, -1.0000e+10]]
+        new_masks =
+            [[-0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00, -0.0000e+00],
+             [-0.0000e+00, -0.0000e+00, -0.0000e+00, -1.0000e+10, -1.0000e+10],
+             [-0.0000e+00, -0.0000e+00, -1.0000e+10, -1.0000e+10, -1.0000e+10]]
     """
     assert mask.dtype == torch.bool
     assert dtype in [torch.float32, torch.bfloat16, torch.float16]
     mask = mask.to(dtype)
+
     # attention mask bias
     # NOTE(Mddct): torch.finfo jit issues
     #     chunk_masks = (1.0 - chunk_masks) * torch.finfo(dtype).min
@@ -304,10 +310,8 @@ def padding(data: List[torch.Tensor]):
     sample = data
     assert isinstance(sample, list)
     feats_lengths = torch.tensor([s.size(1) for s in sample],
-                                dtype=torch.int32)
+                                 dtype=torch.int32)
     feats = [s.t() for s in sample]
-    padded_feats = pad_sequence(feats,
-                                batch_first=True,
-                                padding_value=0)
+    padded_feats = pad_sequence(feats, batch_first=True, padding_value=0)
 
     return padded_feats.transpose(1, 2), feats_lengths
