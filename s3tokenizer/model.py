@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Modified from https://github.com/openai/whisper/blob/main/whisper/model.py
-   Add EuclideanCodebook & VectorQuantization 
+   Add EuclideanCodebook & VectorQuantization
 """
 
 from dataclasses import dataclass
-from typing import Tuple, Iterable, Optional
+from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import torch
@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
 
-from .utils import onnx2torch, make_non_pad_mask, mask_to_bias
+from .utils import make_non_pad_mask, mask_to_bias, onnx2torch
 
 
 @dataclass
@@ -39,11 +39,13 @@ class ModelDimensions:
 
 
 class LayerNorm(nn.LayerNorm):
+
     def forward(self, x: Tensor) -> Tensor:
         return super().forward(x.float()).type(x.dtype)
 
 
 class Linear(nn.Linear):
+
     def forward(self, x: Tensor) -> Tensor:
         return F.linear(
             x,
@@ -53,24 +55,26 @@ class Linear(nn.Linear):
 
 
 class Conv1d(nn.Conv1d):
-    def _conv_forward(
-        self, x: Tensor, weight: Tensor, bias: Optional[Tensor]
-    ) -> Tensor:
+
+    def _conv_forward(self, x: Tensor, weight: Tensor,
+                      bias: Optional[Tensor]) -> Tensor:
         return super()._conv_forward(
-            x, weight.to(x.dtype), None if bias is None else bias.to(x.dtype)
-        )
+            x, weight.to(x.dtype), None if bias is None else bias.to(x.dtype))
 
 
 def sinusoids(length, channels, max_timescale=10000):
     """Returns sinusoids for positional embedding"""
     assert channels % 2 == 0
     log_timescale_increment = np.log(max_timescale) / (channels // 2 - 1)
-    inv_timescales = torch.exp(-log_timescale_increment * torch.arange(channels // 2))
-    scaled_time = torch.arange(length)[:, np.newaxis] * inv_timescales[np.newaxis, :]
+    inv_timescales = torch.exp(-log_timescale_increment *
+                               torch.arange(channels // 2))
+    scaled_time = torch.arange(length)[:, np.newaxis] * inv_timescales[
+        np.newaxis, :]
     return torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim=1)
 
 
 class MultiHeadAttention(nn.Module):
+
     def __init__(self, n_state: int, n_head: int):
         super().__init__()
         self.n_head = n_head
@@ -91,11 +95,13 @@ class MultiHeadAttention(nn.Module):
         wv, qk = self.qkv_attention(q, k, v, mask)
         return self.out(wv), qk
 
-    def qkv_attention(
-        self, q: Tensor, k: Tensor, v: Tensor, mask: Optional[Tensor] = None
-    ):
+    def qkv_attention(self,
+                      q: Tensor,
+                      k: Tensor,
+                      v: Tensor,
+                      mask: Optional[Tensor] = None):
         _, T, D = q.shape
-        scale = (D // self.n_head) ** -0.25
+        scale = (D // self.n_head)**-0.25
         q = q.view(*q.shape[:2], self.n_head, -1).permute(0, 2, 1, 3) * scale
         k = k.view(*k.shape[:2], self.n_head, -1).permute(0, 2, 3, 1) * scale
         v = v.view(*v.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
@@ -110,6 +116,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class ResidualAttentionBlock(nn.Module):
+
     def __init__(self, n_state: int, n_head: int):
         super().__init__()
 
@@ -117,9 +124,8 @@ class ResidualAttentionBlock(nn.Module):
         self.attn_ln = LayerNorm(n_state)
 
         n_mlp = n_state * 4
-        self.mlp = nn.Sequential(
-            Linear(n_state, n_mlp), nn.GELU(), Linear(n_mlp, n_state)
-        )
+        self.mlp = nn.Sequential(Linear(n_state, n_mlp), nn.GELU(),
+                                 Linear(n_mlp, n_state))
         self.mlp_ln = LayerNorm(n_state)
 
     def forward(
@@ -133,18 +139,32 @@ class ResidualAttentionBlock(nn.Module):
 
 
 class AudioEncoder(nn.Module):
+
     def __init__(
-        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int, stride: int,
+        self,
+        n_mels: int,
+        n_ctx: int,
+        n_state: int,
+        n_head: int,
+        n_layer: int,
+        stride: int,
     ):
         super().__init__()
         self.stride = stride
-        self.conv1 = Conv1d(n_mels, n_state, kernel_size=3, stride=stride, padding=1)
-        self.conv2 = Conv1d(n_state, n_state, kernel_size=3, stride=2, padding=1)
+        self.conv1 = Conv1d(n_mels,
+                            n_state,
+                            kernel_size=3,
+                            stride=stride,
+                            padding=1)
+        self.conv2 = Conv1d(n_state,
+                            n_state,
+                            kernel_size=3,
+                            stride=2,
+                            padding=1)
         self.register_buffer("positional_embedding", sinusoids(n_ctx, n_state))
 
         self.blocks: Iterable[ResidualAttentionBlock] = nn.ModuleList(
-            [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]
-        )
+            [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)])
 
     def forward(self, x: Tensor, x_len: Tensor) -> Tuple[Tensor, Tensor]:
         """
@@ -182,10 +202,7 @@ class EuclideanCodebook(nn.Module):
         codebook_size (int): Codebook size.
     """
 
-    def __init__(
-            self,
-            dim: int,
-            codebook_size: int):
+    def __init__(self, dim: int, codebook_size: int):
         super().__init__()
         embed = torch.zeros(codebook_size, dim)
         self.codebook_size = codebook_size
@@ -237,14 +254,10 @@ class VectorQuantization(nn.Module):
         codebook_size (int): Codebook size
     """
 
-    def __init__(
-            self,
-            dim: int,
-            codebook_size: int):
+    def __init__(self, dim: int, codebook_size: int):
         super().__init__()
-        self._codebook = EuclideanCodebook(
-            dim=dim,
-            codebook_size=codebook_size)
+        self._codebook = EuclideanCodebook(dim=dim,
+                                           codebook_size=codebook_size)
         self.codebook_size = codebook_size
 
     @property
@@ -281,20 +294,14 @@ class S3Tokenizer(nn.Module):
             self.dims.n_audio_layer,
             2 if name == "speech_tokenizer_v1_25hz" else 1,
         )
-        self.quantizer = VectorQuantization(
-            self.dims.n_audio_state,
-            self.dims.n_codebook_size
-        )
+        self.quantizer = VectorQuantization(self.dims.n_audio_state,
+                                            self.dims.n_codebook_size)
 
-    def forward(
-        self, mel: Tensor, mel_len: Tensor
-    ) -> Tuple[Tensor, Tensor]:
+    def forward(self, mel: Tensor, mel_len: Tensor) -> Tuple[Tensor, Tensor]:
         return self.quantize(mel, mel_len)
 
     @torch.inference_mode()
-    def quantize(
-        self, mel: Tensor, mel_len: Tensor
-    ) -> Tuple[Tensor, Tensor]:
+    def quantize(self, mel: Tensor, mel_len: Tensor) -> Tuple[Tensor, Tensor]:
         hidden, code_len = self.encoder(mel, mel_len)
         code = self.quantizer.encode(hidden)
         return code, code_len
@@ -314,4 +321,3 @@ class S3Tokenizer(nn.Module):
     def freeze(self):
         for _, param in self.named_parameters():
             param.requires_grad = False
-
