@@ -56,8 +56,9 @@ def _rename_weights(weights_dict: dict):
             assert "blocks" in k
             new_k = (k[1:].replace('/', '.').replace(
                 'MatMul', 'weight').replace('Add_1', 'bias').replace(
-                    'Mul', 'weight').replace('Add',
-                                             'bias').replace('mlp.mlp', 'mlp'))
+                    'Mul', 'weight').replace('Add', 'bias').replace(
+                        'mlp.mlp', 'mlp')).replace('fsmn_block.Conv',
+                                                   'fsmn_block.weight')
 
             new_weight_dict[f"encoder.{new_k}"] = weights_dict[k]
     return new_weight_dict
@@ -133,8 +134,8 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
                         weight_name = node.name
                 if ln_weight_name is not None and ln_bias_name is not None:
                     ln_inputs = node.input
-                    scale_name = ln_inputs[1]  # Scale 的输入名称
-                    bias_name = ln_inputs[2]  # B 的输入名称
+                    scale_name = ln_inputs[1]
+                    bias_name = ln_inputs[2]
                     scale = onnx.numpy_helper.to_array(
                         initializer_map[scale_name]).copy(
                         ) if scale_name in initializer_map else None

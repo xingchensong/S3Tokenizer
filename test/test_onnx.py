@@ -51,6 +51,8 @@ for i in range(len(wav_paths)):
             ort_session.get_inputs()[1].name:
             np.array([mels_lens[i].item()], dtype=np.int32)
         })[0]
+    if name == 'speech_tokenizer_v2_25hz':
+        speech_token = np.expand_dims(speech_token, 0)
     speech_token = torch.tensor(speech_token[0, 0, :])
     print(f"wav[{i}]")
     print(speech_token)
@@ -58,6 +60,6 @@ for i in range(len(wav_paths)):
         f"all equal: {torch.equal(speech_token, codes[i, :codes_lens[i].item()].cpu())}"  # noqa
     )
     miss_num = torch.sum(
-        (speech_token == codes[i, :codes_lens[i].item()].cpu()) is False)
+        ~(speech_token == codes[i, :codes_lens[i].item()].cpu()))
     total = speech_token.numel()
     print(f"miss rate: {miss_num * 100.0 / total}%")
