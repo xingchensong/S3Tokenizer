@@ -24,6 +24,8 @@ from typing import List, Union
 
 from tqdm import tqdm
 
+from s3tokenizer.model_v2 import S3TokenizerV2
+
 from .model import S3Tokenizer
 from .utils import (load_audio, log_mel_spectrogram, make_non_pad_mask,
                     mask_to_bias, onnx2torch, padding)
@@ -142,8 +144,10 @@ def load_model(
     else:
         raise RuntimeError(
             f"Model {name} not found; available models = {available_models()}")
-
-    model = S3Tokenizer(name)
+    if 'v2' in name:
+        model = S3TokenizerV2(name)
+    else:
+        model = S3Tokenizer(name)
     model.init_from_onnx(checkpoint_file)
 
     return model
