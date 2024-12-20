@@ -147,7 +147,7 @@ class MultiHeadAttention(nn.Module):
             q, k = apply_rotary_emb(q, k, freqs_cis=freqs_cis)
 
         q = q.permute(0, 2, 1, 3) * scale
-        k = k.permute(0, 2, 1, 3) * scale
+        k = k.permute(0, 2, 3, 1) * scale
         v = v.view(*v.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
 
         qk = q @ k  # (B, n_head, T, T)
@@ -206,7 +206,7 @@ class AudioEncoder(nn.Module):
                             kernel_size=3,
                             stride=2,
                             padding=1)
-        self.rope = True
+        self.rope = rope
         if not rope:
             self.register_buffer("positional_embedding",
                                  sinusoids(n_ctx, n_state))
@@ -398,7 +398,7 @@ class S3Tokenizer(nn.Module):
             self.dims.n_audio_layer,
             2 if name
             in ["speech_tokenizer_v1_25hz", "speech_tokenizer_v2_25hz"] else 1,
-        )
+            rope=True if 'v2' in name else False)
         self.quantizer = VectorQuantization(
             self.dims.n_audio_state,
             self.dims.n_codebook_size,
