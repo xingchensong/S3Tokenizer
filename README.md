@@ -25,7 +25,7 @@ pip install s3tokenizer
 ```py
 import s3tokenizer
 
-tokenizer = s3tokenizer.load_model("speech_tokenizer_v1").cuda()  # or "speech_tokenizer_v1_25hz"
+tokenizer = s3tokenizer.load_model("speech_tokenizer_v1").cuda()  # or "speech_tokenizer_v1_25hz speech_tokenizer_v2_25hz"
 
 mels = []
 wav_paths = ["s3tokenizer/assets/BAC009S0764W0121.wav", "s3tokenizer/assets/BAC009S0764W0122.wav"]
@@ -48,7 +48,7 @@ s3tokenizer --wav_scp xxx.scp \
             --device "cpu" \
             --output_dir "./" \
             --batch_size 32 \
-            --model "speech_tokenizer_v1"  # or "speech_tokenizer_v1_25hz"
+            --model "speech_tokenizer_v1"  # or "speech_tokenizer_v1_25hz speech_tokenizer_v2_25hz"
 ```
 
 
@@ -66,7 +66,7 @@ torchrun --nproc_per_node=8 --nnodes=1 \
                 --device "cuda" \
                 --output_dir "./" \
                 --batch_size 32 \
-                --model "speech_tokenizer_v1"  # or "speech_tokenizer_v1_25hz"
+                --model "speech_tokenizer_v1"  # or "speech_tokenizer_v1_25hz speech_tokenizer_v2_25hz"
 ```
 
 
