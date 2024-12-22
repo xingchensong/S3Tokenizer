@@ -43,9 +43,11 @@ def _rename_weights(weights_dict: dict):
     """
     new_weight_dict = {}
     for k in weights_dict.keys():
-        if "quantizer" in k:  # vq
+        if "quantizer" in k:  # vq or fsq
             if k == "/quantizer/rq/model/layers.0/_codebook/Pow_1":
                 new_weight_dict["quantizer._codebook.embed"] = weights_dict[k]
+            elif 'project_down' in k:  # v2
+                new_weight_dict[k] = weights_dict[k]
         elif "positional_embedding" in k:  # positional emb
             new_weight_dict[k] = weights_dict[k]
         elif "conv" in k:  # 1/2 or 1/4 subsample
@@ -54,8 +56,10 @@ def _rename_weights(weights_dict: dict):
             assert "blocks" in k
             new_k = (k[1:].replace('/', '.').replace(
                 'MatMul', 'weight').replace('Add_1', 'bias').replace(
-                    'Mul', 'weight').replace('Add',
-                                             'bias').replace('mlp.mlp', 'mlp'))
+                    'Mul', 'weight').replace('Add', 'bias').replace(
+                        'mlp.mlp', 'mlp')).replace('fsmn_block.Conv',
+                                                   'fsmn_block.weight')
+
             new_weight_dict[f"encoder.{new_k}"] = weights_dict[k]
     return new_weight_dict
 
@@ -89,31 +93,74 @@ def onnx2torch(onnx_path: str, torch_path: str = None, verbose: bool = False):
     for node in onnx_model.graph.node:
         for input_name in node.input:
             if input_name in initializer_map:
+                ln_bias_name, ln_weight_name = None, None  # for v2 ln
                 initializer = initializer_map[input_name]
-                if (input_name == "onnx::Conv_1519"
-                        or input_name == "encoders.conv1.weight"):
+                if input_name in [
+                        "onnx::Conv_1519",
+                        "encoders.conv1.weight",
+                        "onnx::Conv_2216",
+                ]:  # v1_50hz, v1_25hz, v2_25hz
                     weight_name = "encoder.conv1.weight"
-                elif (input_name == "onnx::Conv_1520"
-                      or input_name == "encoders.conv1.bias"):
+                elif input_name in [
+                        "onnx::Conv_1520",
+                        "encoders.conv1.bias",
+                        "onnx::Conv_2217",
+                ]:  # v1_50hz, v1_25hz, v2_25hz
                     weight_name = "encoder.conv1.bias"
-                elif (input_name == "onnx::Conv_1521"
-                      or input_name == "encoders.conv2.weight"):
+                elif input_name in [
+                        "onnx::Conv_1521",
+                        "encoders.conv2.weight",
+                        "onnx::Conv_2218",
+                ]:
                     weight_name = "encoder.conv2.weight"
-                elif (input_name == "onnx::Conv_1522"
-                      or input_name == "encoders.conv2.bias"):
+                elif input_name in [
+                        "onnx::Conv_1522",
+                        "encoders.conv2.bias",
+                        "onnx::Conv_2219",
+                ]:
                     weight_name = "encoder.conv2.bias"
                 elif input_name == "encoders.positional_embedding":
                     weight_name = "encoder.positional_embedding"
+                elif input_name == 'quantizer.project_in.bias':
+                    weight_name = "quantizer._codebook.project_down.bias"
+                elif input_name == 'onnx::MatMul_2536':
+                    weight_name = "quantizer._codebook.project_down.weight"
                 else:
-                    weight_name = node.name
-                weight_array = onnx.numpy_helper.to_array(initializer).copy()
-                weight_array.flags.writeable = True
-                weight_tensor = torch.from_numpy(weight_array)
-                if len(weight_tensor.shape
-                       ) > 2 or weight_name == "encoder.positional_embedding":
-                    weights_dict[weight_name] = weight_tensor
+                    if node.op_type == 'LayerNormalization':  # in input_name:
+                        ln_name = node.name.replace('/LayerNormalization', '')
+                        ln_weight_name = ln_name + '.weight'
+                        ln_bias_name = ln_name + '.bias'
+                    else:
+                        weight_name = node.name
+                if ln_weight_name is not None and ln_bias_name is not None:
+                    ln_inputs = node.input
+                    scale_name = ln_inputs[1]
+                    bias_name = ln_inputs[2]
+                    scale = onnx.numpy_helper.to_array(
+                        initializer_map[scale_name]).copy(
+                        ) if scale_name in initializer_map else None
+                    bias = onnx.numpy_helper.to_array(
+                        initializer_map[bias_name]).copy(
+                        ) if bias_name in initializer_map else None
+                    scale.flags.writeable = True
+                    bias.flags.writeable = True
+                    weight_tensor = torch.from_numpy(scale)
+                    bias_tensor = torch.from_numpy(bias)
+
+                    weights_dict[ln_bias_name] = bias_tensor
+                    weights_dict[ln_weight_name] = weight_tensor
                 else:
-                    weights_dict[weight_name] = weight_tensor.t()
+                    weight_array = onnx.numpy_helper.to_array(
+                        initializer).copy()
+                    weight_array.flags.writeable = True
+                    weight_tensor = torch.from_numpy(weight_array)
+                    if len(weight_tensor.shape) > 2 or weight_name in [
+                            "encoder.positional_embedding"
+                    ]:
+                        weights_dict[weight_name] = weight_tensor
+                    else:
+                        weights_dict[weight_name] = weight_tensor.t()
+
     new_weights_dict = _rename_weights(weights_dict)
     if verbose:
         for k, v in new_weights_dict.items():

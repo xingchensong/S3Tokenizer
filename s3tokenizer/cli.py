@@ -91,12 +91,14 @@ def init_distributed():
 
 def get_args():
     parser = argparse.ArgumentParser(description='extract speech code')
-    parser.add_argument(
-        '--model',
-        required=True,
-        type=str,
-        choices=["speech_tokenizer_v1", "speech_tokenizer_v1_25hz"],
-        help='model version')
+    parser.add_argument('--model',
+                        required=True,
+                        type=str,
+                        choices=[
+                            "speech_tokenizer_v1", "speech_tokenizer_v1_25hz",
+                            "speech_tokenizer_v2_25hz"
+                        ],
+                        help='model version')
     parser.add_argument('--wav_scp',
                         required=True,
                         type=str,
