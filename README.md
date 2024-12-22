@@ -15,9 +15,9 @@ This repository undertakes a reverse engineering of the S3Tokenizer, offering:
 3. The capability to perform online speech code extraction during SpeechLLM training.
 
 ## Supported Models 🔥
-- [x] S3Tokenizer V1 50hz
-- [x] S3Tokenizer V1 25hz
-- [x] S3Tokenizer V2 25hz
+- [x] [S3Tokenizer V1 50hz](https://modelscope.cn/models/iic/CosyVoice-300M)
+- [x] [S3Tokenizer V1 25hz](https://modelscope.cn/models/iic/CosyVoice-300M-25Hz)
+- [x] [S3Tokenizer V2 25hz](https://modelscope.cn/models/iic/CosyVoice2-0.5B)
 
 
 # Setup
