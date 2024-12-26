@@ -303,7 +303,7 @@ class AudioEncoderV2(torch.nn.Module):
         x = x.permute(0, 2, 1)  # (B, T // 2, n_state)
         freqs_cis = self.freqs_cis.to(x.device)
         mask = make_non_pad_mask(x_len, T).unsqueeze(1)  # (B, 1, T)
-        mask = mask[:, :, (T + 1) % 2::2]  # (B, 1, T // 2)
+        mask = mask[:, :, (T + 2) % 2::2]  # (B, 1, T // 2)
         mask_pad = None
         if self.stride == 2:
             _T = mask.size(-1)
