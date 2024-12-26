@@ -106,7 +106,7 @@ class FSQCodebook(torch.nn.Module):
         powers = torch.pow(self.level,
                            torch.arange(2**self.level, device=x.device))
         mu = torch.sum(h * powers.unsqueeze(0), dim=-1)
-        ind = mu.reshape(x_shape[0], x_shape[1])
+        ind = mu.reshape(x_shape[0], x_shape[1]).int()
         return ind
 
     @torch.inference_mode()
