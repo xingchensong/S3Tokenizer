@@ -173,15 +173,15 @@ class AudioEncoder(nn.Module):
         x_len: torch.Tensor, shape = (batch_size,)
             length of each audio in x
         """
-        T = x.size(-1)
-        x = F.gelu(self.conv1(x))
-        x = F.gelu(self.conv2(x))
+        mask = make_non_pad_mask(x_len).unsqueeze(1)
+        x = F.gelu(self.conv1(x * mask))
+        x_len = (x_len + 2 - 1 * (3 - 1) - 1) // self.stride + 1
+        mask = make_non_pad_mask(x_len).unsqueeze(1)
+        x = F.gelu(self.conv2(x * mask))
+        x_len = (x_len + 2 - 1 * (3 - 1) - 1) // 2 + 1
+        mask = make_non_pad_mask(x_len).unsqueeze(1)
         x = x.permute(0, 2, 1)  # (B, T // 2, n_state)
-        mask = make_non_pad_mask(x_len, T).unsqueeze(1)  # (B, 1, T)
-        mask = mask[:, :, (T + 2) % 2::2]  # (B, 1, T // 2)
-        if self.stride == 2:
-            _T = mask.size(-1)
-            mask = mask[:, :, (_T + 2) % 2::2]  # (B, 1, T // 4)
+
         mask = mask_to_bias(mask, x.dtype)
 
         x = (x + self.positional_embedding[:x.shape[1], :]).to(x.dtype)
@@ -189,9 +189,6 @@ class AudioEncoder(nn.Module):
         for block in self.blocks:
             x = block(x, mask.unsqueeze(1))
 
-        x_len = (x_len + 1) // 2
-        if self.stride == 2:
-            x_len = (x_len + 1) // 2
         return x, x_len
 
 
