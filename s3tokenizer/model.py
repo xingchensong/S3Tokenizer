@@ -29,13 +29,15 @@ from .utils import make_non_pad_mask, mask_to_bias, onnx2torch
 
 
 @dataclass
-class ModelDimensions:
+class ModelConfig:
     n_mels: int = 128
     n_audio_ctx: int = 1500
     n_audio_state: int = 1280
     n_audio_head: int = 20
     n_audio_layer: int = 6
     n_codebook_size: int = 4096
+
+    use_sdpa: bool = False
 
 
 class LayerNorm(nn.LayerNorm):
@@ -75,13 +77,15 @@ def sinusoids(length, channels, max_timescale=10000):
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, n_state: int, n_head: int):
+    def __init__(self, n_state: int, n_head: int, use_sdpa: bool = False):
         super().__init__()
         self.n_head = n_head
         self.query = Linear(n_state, n_state)
         self.key = Linear(n_state, n_state, bias=False)
         self.value = Linear(n_state, n_state)
         self.out = Linear(n_state, n_state)
+
+        self.use_sdpa = use_sdpa
 
     def forward(
         self,
@@ -100,27 +104,44 @@ class MultiHeadAttention(nn.Module):
                       k: Tensor,
                       v: Tensor,
                       mask: Optional[Tensor] = None):
-        _, T, D = q.shape
+        _, _, D = q.shape
         scale = (D // self.n_head)**-0.25
         q = q.view(*q.shape[:2], self.n_head, -1).permute(0, 2, 1, 3) * scale
-        k = k.view(*k.shape[:2], self.n_head, -1).permute(0, 2, 3, 1) * scale
+        k = k.view(*k.shape[:2], self.n_head, -1)
         v = v.view(*v.shape[:2], self.n_head, -1).permute(0, 2, 1, 3)
 
-        qk = q @ k  # (B, n_head, T, T)
-        if mask is not None:
-            qk = qk + mask
-        qk = qk.float()
-
-        w = F.softmax(qk, dim=-1).to(q.dtype)
-        return (w @ v).permute(0, 2, 1, 3).flatten(start_dim=2), qk.detach()
+        if not self.use_sdpa:
+            k = k.permute(0, 2, 3, 1) * scale
+            qk = q @ k  # (B, n_head, T, T)
+            if mask is not None:
+                qk = qk + mask
+            qk = qk.float()
+            w = torch.nn.functional.softmax(qk, dim=-1).to(q.dtype)
+            return (w @ v).permute(0, 2, 1,
+                                   3).flatten(start_dim=2), qk.detach()
+        else:
+            k = k.permute(0, 2, 1, 3) * scale
+            assert mask is not None
+            output = torch.nn.functional.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=mask,
+                dropout_p=0.,
+                scale=1.,
+            )
+            output = (output.transpose(1,
+                                       2).contiguous().view(q.size(0), -1, D)
+                      )  # (batch, time1, d_model)
+            return output, None
 
 
 class ResidualAttentionBlock(nn.Module):
 
-    def __init__(self, n_state: int, n_head: int):
+    def __init__(self, n_state: int, n_head: int, use_sdpa: bool):
         super().__init__()
 
-        self.attn = MultiHeadAttention(n_state, n_head)
+        self.attn = MultiHeadAttention(n_state, n_head, use_sdpa=use_sdpa)
         self.attn_ln = LayerNorm(n_state)
 
         n_mlp = n_state * 4
@@ -148,6 +169,7 @@ class AudioEncoder(nn.Module):
         n_head: int,
         n_layer: int,
         stride: int,
+        use_sdpa: bool,
     ):
         super().__init__()
         self.stride = stride
@@ -163,8 +185,10 @@ class AudioEncoder(nn.Module):
                             padding=1)
         self.register_buffer("positional_embedding", sinusoids(n_ctx, n_state))
 
-        self.blocks: Iterable[ResidualAttentionBlock] = nn.ModuleList(
-            [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)])
+        self.blocks: Iterable[ResidualAttentionBlock] = nn.ModuleList([
+            ResidualAttentionBlock(n_state, n_head, use_sdpa=use_sdpa)
+            for _ in range(n_layer)
+        ])
 
     def forward(self, x: Tensor, x_len: Tensor) -> Tuple[Tensor, Tensor]:
         """
@@ -277,22 +301,23 @@ class VectorQuantization(nn.Module):
 class S3Tokenizer(nn.Module):
     """S3 tokenizer implementation (inference-only).
     Args:
-        dims (ModelDimensions): Dimension
+        config  (ModelConfig): Config
     """
 
-    def __init__(self, name: str, dims: ModelDimensions = ModelDimensions()):
+    def __init__(self, name: str, config: ModelConfig = ModelConfig()):
         super().__init__()
-        self.dims = dims
+        self.config = config
         self.encoder = AudioEncoder(
-            self.dims.n_mels,
-            self.dims.n_audio_ctx,
-            self.dims.n_audio_state,
-            self.dims.n_audio_head,
-            self.dims.n_audio_layer,
+            self.config.n_mels,
+            self.config.n_audio_ctx,
+            self.config.n_audio_state,
+            self.config.n_audio_head,
+            self.config.n_audio_layer,
             2 if name == "speech_tokenizer_v1_25hz" else 1,
+            self.config.use_sdpa,
         )
-        self.quantizer = VectorQuantization(self.dims.n_audio_state,
-                                            self.dims.n_codebook_size)
+        self.quantizer = VectorQuantization(self.config.n_audio_state,
+                                            self.config.n_codebook_size)
 
     def forward(self, mel: Tensor, mel_len: Tensor) -> Tuple[Tensor, Tensor]:
         return self.quantize(mel, mel_len)

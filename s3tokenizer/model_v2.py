@@ -23,13 +23,15 @@ from s3tokenizer.utils import make_non_pad_mask, mask_to_bias, onnx2torch
 
 
 @dataclass
-class ModelDimensions:
+class ModelConfig:
     n_mels: int = 128
     n_audio_ctx: int = 1500
     n_audio_state: int = 1280
     n_audio_head: int = 20
     n_audio_layer: int = 6
     n_codebook_size: int = 3**8
+
+    use_sdpa: bool = False
 
 
 def precompute_freqs_cis(dim: int,
@@ -154,6 +156,7 @@ class FSMNMultiHeadAttention(MultiHeadAttention):
         n_state: int,
         n_head: int,
         kernel_size: int = 31,
+        use_sdpa: bool = False,
     ):
         super().__init__(n_state, n_head)
 
@@ -168,6 +171,8 @@ class FSMNMultiHeadAttention(MultiHeadAttention):
         self.right_padding = kernel_size - 1 - self.left_padding
         self.pad_fn = torch.nn.ConstantPad1d(
             (self.left_padding, self.right_padding), 0.0)
+
+        self.use_sdpa = use_sdpa
 
     def forward_fsmn(self,
                      inputs: torch.Tensor,
@@ -202,16 +207,32 @@ class FSMNMultiHeadAttention(MultiHeadAttention):
         fsm_memory = self.forward_fsmn(v, mask_pad)
 
         q = q.permute(0, 2, 1, 3) * scale
-        k = k.permute(0, 2, 3, 1) * scale
         v = v.permute(0, 2, 1, 3)
 
-        qk = q @ k  # (B, n_head, T, T)
-        if mask is not None:
-            qk = qk + mask
-        qk = qk.float()
-        w = torch.nn.functional.softmax(qk, dim=-1).to(q.dtype)
-        return (w @ v).permute(0, 2, 1,
-                               3).flatten(start_dim=2), qk.detach(), fsm_memory
+        if not self.use_sdpa:
+            k = k.permute(0, 2, 3, 1) * scale
+            qk = q @ k  # (B, n_head, T, T)
+            if mask is not None:
+                qk = qk + mask
+            qk = qk.float()
+            w = torch.nn.functional.softmax(qk, dim=-1).to(q.dtype)
+            return (w @ v).permute(
+                0, 2, 1, 3).flatten(start_dim=2), qk.detach(), fsm_memory
+        else:
+            k = k.permute(0, 2, 1, 3) * scale
+            assert mask is not None
+            output = torch.nn.functional.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=mask,
+                dropout_p=0.,
+                scale=1.,
+            )
+            output = (output.transpose(1,
+                                       2).contiguous().view(q.size(0), -1, D)
+                      )  # (batch, time1, d_model)
+            return output, None, fsm_memory
 
     def forward(self,
                 x: torch.Tensor,
@@ -235,10 +256,14 @@ class ResidualAttentionBlock(torch.nn.Module):
         n_state: int,
         n_head: int,
         kernel_size: int = 31,
+        use_sdpa: bool = False,
     ):
         super().__init__()
 
-        self.attn = FSMNMultiHeadAttention(n_state, n_head, kernel_size)
+        self.attn = FSMNMultiHeadAttention(n_state,
+                                           n_head,
+                                           kernel_size,
+                                           use_sdpa=use_sdpa)
         self.attn_ln = LayerNorm(n_state, eps=1e-6)
 
         n_mlp = n_state * 4
@@ -271,6 +296,7 @@ class AudioEncoderV2(torch.nn.Module):
         n_head: int,
         n_layer: int,
         stride: int,
+        use_sdpa: bool,
     ):
         super().__init__()
         self.stride = stride
@@ -286,8 +312,10 @@ class AudioEncoderV2(torch.nn.Module):
                             stride=2,
                             padding=1)
         self.freqs_cis = precompute_freqs_cis(64, 1024 * 2)
-        self.blocks = torch.nn.ModuleList(
-            [ResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)])
+        self.blocks = torch.nn.ModuleList([
+            ResidualAttentionBlock(n_state, n_head, use_sdpa=use_sdpa)
+            for _ in range(n_layer)
+        ])
 
     def forward(self, x: torch.Tensor,
                 x_len: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -326,26 +354,27 @@ class AudioEncoderV2(torch.nn.Module):
 class S3TokenizerV2(torch.nn.Module):
     """S3 tokenizer v2 implementation (inference-only).
     Args:
-        dims (ModelDimensions): Dimension
+        config (ModelConfig): Config
     """
 
-    def __init__(self, name: str, dims: ModelDimensions = ModelDimensions()):
+    def __init__(self, name: str, config: ModelConfig = ModelConfig()):
         super().__init__()
         if 'v1' not in name:
             assert 'v2' in name
             # TODO(Mddct): make it configureable
-            dims.n_codebook_size = 3**8
-        self.dims = dims
+            config.n_codebook_size = 3**8
+        self.config = config
         self.encoder = AudioEncoderV2(
-            self.dims.n_mels,
-            self.dims.n_audio_state,
-            self.dims.n_audio_head,
-            self.dims.n_audio_layer,
+            self.config.n_mels,
+            self.config.n_audio_state,
+            self.config.n_audio_head,
+            self.config.n_audio_layer,
             2,
+            self.config.use_sdpa,
         )
         self.quantizer = FSQVectorQuantization(
-            self.dims.n_audio_state,
-            self.dims.n_codebook_size,
+            self.config.n_audio_state,
+            self.config.n_codebook_size,
         )
 
     def forward(self, mel: torch.Tensor,
