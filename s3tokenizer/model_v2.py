@@ -297,18 +297,16 @@ class AudioEncoderV2(torch.nn.Module):
         x_len: torch.Tensor, shape = (batch_size,)
             length of each audio in x
         """
-        T = x.size(-1)
+        mask = make_non_pad_mask(x_len).unsqueeze(1)
         x = torch.nn.functional.gelu(self.conv1(x))
+        x_len = (x_len + 2 - 1 * (3 - 1) - 1) // self.stride + 1
+        mask = make_non_pad_mask(x_len).unsqueeze(1)
         x = torch.nn.functional.gelu(self.conv2(x))
+        x_len = (x_len + 2 - 1 * (3 - 1) - 1) // 2 + 1
+        mask = make_non_pad_mask(x_len).unsqueeze(1)
         x = x.permute(0, 2, 1)  # (B, T // 2, n_state)
         freqs_cis = self.freqs_cis.to(x.device)
-        mask = make_non_pad_mask(x_len, T).unsqueeze(1)  # (B, 1, T)
-        mask = mask[:, :, (T + 2) % 2::2]  # (B, 1, T // 2)
-        mask_pad = None
-        if self.stride == 2:
-            _T = mask.size(-1)
-            mask = mask[:, :, (_T + 1) % 2::2]  # (B, 1, T // 4)
-            mask_pad = mask.transpose(1, 2)
+        mask_pad = mask.transpose(1, 2)
         mask = mask_to_bias(mask, x.dtype)
 
         tmp = torch.view_as_real(freqs_cis)
@@ -322,9 +320,6 @@ class AudioEncoderV2(torch.nn.Module):
         for block in self.blocks:
             x = block(x, mask.unsqueeze(1), mask_pad, freqs_cis[:x.size(1)])
 
-        x_len = (x_len + 1) // 2
-        if self.stride == 2:
-            x_len = (x_len + 1) // 2
         return x, x_len
 
 
