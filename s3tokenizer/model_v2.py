@@ -99,14 +99,14 @@ class FSQCodebook(torch.nn.Module):
         # pre-process
         x = self.preprocess(x)
         # quantize
-
-        h = self.project_down(x)
+        h = self.project_down(x).float()
         h = h.tanh()
         h = h * 0.9990000128746033
         h = h.round() + 1
         # h = ((self.level - 1) * h).round()  # range [-k, k]
-        powers = torch.pow(self.level,
-                           torch.arange(2**self.level, device=x.device))
+        powers = torch.pow(
+            self.level,
+            torch.arange(2**self.level, device=x.device, dtype=h.dtype))
         mu = torch.sum(h * powers.unsqueeze(0), dim=-1)
         ind = mu.reshape(x_shape[0], x_shape[1]).int()
         return ind
