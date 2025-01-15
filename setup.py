@@ -12,7 +12,7 @@ def parse_requirements(filename):
 
 setup(
     name="s3tokenizer",
-    version="0.1.6",
+    version="0.1.7",
     description=\
     "Reverse Engineering of Supervised Semantic Speech Tokenizer (S3Tokenizer) proposed in CosyVoice",  # noqa
     long_description=open("README.md", encoding="utf-8").read(),
