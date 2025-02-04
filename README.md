@@ -86,8 +86,8 @@ https://github.com/user-attachments/assets/79a3fb11-7199-4ee2-8a35-9682a3b4d94a
 |  Method  | Time cost on Aishell Test Set | Relative speed up | Miss Rate |
 |:------:|:----------:|:--------------:|:-----:|
 |  [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py), cpu |   9 hours    |    ~         | ~ |
-|  cpu, batchsize 32  |    1.5h    |    ~6x        | 0.76% |
-|  4 gpus (3090), batchsize 32 per gpu  |   41s    |   ~790x         | 0.76% |
+|  cpu, batchsize 32  |    1.5h    |    ~6x        | 0.00% |
+|  4 gpus (3090), batchsize 32 per gpu  |   41s    |   ~790x         | 0.00% |
 
 The miss rate represents the proportion of tokens that are inconsistent between the batch inference predictions and the ONNX (batch=1) inference predictions.
 
