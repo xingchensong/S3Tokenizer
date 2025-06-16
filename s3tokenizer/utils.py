@@ -248,7 +248,6 @@ def log_mel_spectrogram(
     if not torch.is_tensor(audio):
         if isinstance(audio, str):
             audio = load_audio(audio)
-        audio = torch.from_numpy(audio)
 
     if device is not None:
         audio = audio.to(device)
