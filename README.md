@@ -14,11 +14,13 @@ This repository undertakes a reverse engineering of the S3Tokenizer, offering:
 2. High-throughput (distributed) batch inference, achieving a ~790x speedup compared to the original inference pipeline in [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py).
 3. The capability to perform online speech code extraction during SpeechLLM training.
 
-## Supported Models 🔥 && New Features 🎉
+## Latest News 🎉
+- [2025/07/07] S3Tokenizer now has built-in **long audio processing** capabilities, requiring no additional operations from users!
+
+## Supported Models 🔥
 - [x] Model: [S3Tokenizer V1 50hz](https://modelscope.cn/models/iic/CosyVoice-300M)
 - [x] Model: [S3Tokenizer V1 25hz](https://modelscope.cn/models/iic/CosyVoice-300M-25Hz)
 - [x] Model: [S3Tokenizer V2 25hz](https://modelscope.cn/models/iic/CosyVoice2-0.5B)
-- [x] Feature: S3Tokenizer now has built-in **long audio processing** capabilities, requiring no additional operations from users!
 
 
 # Setup
