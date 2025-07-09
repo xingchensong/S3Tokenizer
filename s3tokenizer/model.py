@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
 
-from .utils import make_non_pad_mask, mask_to_bias, onnx2torch, merge_tokenized_segments, padding
+from .utils import make_non_pad_mask, mask_to_bias, onnx2torch, merge_tokenized_segments
 
 
 @dataclass
@@ -345,7 +345,8 @@ class S3Tokenizer(nn.Module):
 
         if long_audio_mask.any():
             # Has long audio - need special processing
-            return self._quantize_mixed_batch(mel, mel_len, long_audio_mask, max_frames)
+            return self._quantize_mixed_batch(mel, mel_len, long_audio_mask,
+                                              max_frames)
         else:
             # All short audio - use original method
             hidden, code_len = self.encoder(mel, mel_len)
@@ -353,7 +354,9 @@ class S3Tokenizer(nn.Module):
             return code, code_len
 
     @torch.inference_mode()
-    def _quantize_mixed_batch(self, mel: Tensor, mel_len: Tensor, long_audio_mask: Tensor, max_frames: int) -> Tuple[Tensor, Tensor]:
+    def _quantize_mixed_batch(self, mel: Tensor, mel_len: Tensor,
+                              long_audio_mask: Tensor,
+                              max_frames: int) -> Tuple[Tensor, Tensor]:
         """
         Handle mixed batch with both short and long audio using unified batch processing.
 
@@ -380,10 +383,11 @@ class S3Tokenizer(nn.Module):
         frames_per_overlap = overlap * sample_rate // hop_length  # 400 frames
         frames_per_stride = frames_per_window - frames_per_overlap  # 2600 frames
 
-                # Collect all segments to process (including short and long audio segments)
+        # Collect all segments to process (including short and long audio segments)
         all_segments = []
         all_segments_len = []
-        segment_info = []  # Record which audio each segment belongs to and whether it's long audio
+        segment_info = [
+        ]  # Record which audio each segment belongs to and whether it's long audio
 
         # Process all audio in the batch
         for batch_idx in range(batch_size):
@@ -402,7 +406,8 @@ class S3Tokenizer(nn.Module):
                     segment = F.pad(segment, (0, pad_size))
 
                 all_segments.append(segment)
-                all_segments_len.append(torch.tensor(seg_len, device=mel.device))
+                all_segments_len.append(
+                    torch.tensor(seg_len, device=mel.device))
                 segment_info.append({
                     'batch_idx': batch_idx,
                     'is_long_audio': False,
@@ -424,7 +429,8 @@ class S3Tokenizer(nn.Module):
                         segment = F.pad(segment, (0, pad_size))
 
                     all_segments.append(segment)
-                    all_segments_len.append(torch.tensor(seg_len, device=mel.device))
+                    all_segments_len.append(
+                        torch.tensor(seg_len, device=mel.device))
                     segment_info.append({
                         'batch_idx': batch_idx,
                         'is_long_audio': True,
@@ -443,7 +449,13 @@ class S3Tokenizer(nn.Module):
 
         if not all_segments:
             # Fallback if no segments
-            return torch.zeros(batch_size, 0, dtype=torch.long, device=mel.device), torch.zeros(batch_size, dtype=torch.long, device=mel.device)
+            return torch.zeros(batch_size,
+                               0,
+                               dtype=torch.long,
+                               device=mel.device), torch.zeros(
+                                   batch_size,
+                                   dtype=torch.long,
+                                   device=mel.device)
 
         # Unified batch processing for all segments
         unified_batch_mel = torch.stack(all_segments)
@@ -462,11 +474,14 @@ class S3Tokenizer(nn.Module):
             segment_idx = info['segment_idx']
 
             # Get codes for current segment
-            segment_code = codes[seg_idx, :code_len[seg_idx].item()].cpu().numpy().tolist()
+            segment_code = codes[
+                seg_idx, :code_len[seg_idx].item()].cpu().numpy().tolist()
 
             if not is_long_audio:
                 # Short audio: use directly
-                code_tensor = torch.tensor(segment_code, dtype=torch.long, device=mel.device)
+                code_tensor = torch.tensor(segment_code,
+                                           dtype=torch.long,
+                                           device=mel.device)
                 results[batch_idx] = (code_tensor, len(segment_code))
             else:
                 # Long audio: collect all segments
@@ -481,22 +496,32 @@ class S3Tokenizer(nn.Module):
                 audio_codes = results[batch_idx]
 
                 # Determine token rate based on model name
-                if hasattr(self, 'name') and self.name == "speech_tokenizer_v1":
+                if hasattr(self,
+                           'name') and self.name == "speech_tokenizer_v1":
                     token_rate = 50
                 else:
                     token_rate = 25
 
-                merged_codes = merge_tokenized_segments(audio_codes, overlap=overlap, token_rate=token_rate)
+                merged_codes = merge_tokenized_segments(audio_codes,
+                                                        overlap=overlap,
+                                                        token_rate=token_rate)
 
                 # Convert to tensor
-                merged_codes_tensor = torch.tensor(merged_codes, dtype=torch.long, device=mel.device)
+                merged_codes_tensor = torch.tensor(merged_codes,
+                                                   dtype=torch.long,
+                                                   device=mel.device)
                 results[batch_idx] = (merged_codes_tensor, len(merged_codes))
 
         # Construct final output
         max_code_len = max(code_info[1] for code_info in results.values())
 
-        output_codes = torch.zeros(batch_size, max_code_len, dtype=torch.long, device=mel.device)
-        output_codes_len = torch.zeros(batch_size, dtype=torch.long, device=mel.device)
+        output_codes = torch.zeros(batch_size,
+                                   max_code_len,
+                                   dtype=torch.long,
+                                   device=mel.device)
+        output_codes_len = torch.zeros(batch_size,
+                                       dtype=torch.long,
+                                       device=mel.device)
 
         for batch_idx, (code_tensor, code_len) in results.items():
             output_codes[batch_idx, :code_len] = code_tensor
