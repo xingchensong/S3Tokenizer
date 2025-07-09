@@ -43,5 +43,5 @@ jobs:
           set -eux
           pip install pytest
           pytest --version
-          PYTHONPATH="${PYTHONPATH:-}:$(pwd)" pytest tests/ -q
+          PYTHONPATH="${PYTHONPATH:-}:$(pwd)" pytest test/ -q
           if [ $? != 0 ]; then exit 1; fi
