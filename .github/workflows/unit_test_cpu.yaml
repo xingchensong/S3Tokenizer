@@ -41,7 +41,7 @@ jobs:
       - name: Run Pytest
         run: |
           set -eux
-          pip install pytest
+          pip install pytest onnxruntime
           pytest --version
           PYTHONPATH="${PYTHONPATH:-}:$(pwd)" pytest test/ -q
           if [ $? != 0 ]; then exit 1; fi

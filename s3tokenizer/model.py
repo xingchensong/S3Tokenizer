@@ -236,7 +236,7 @@ class EuclideanCodebook(nn.Module):
 
     @torch.inference_mode()
     def quantize(self, x: Tensor) -> Tensor:
-        embed = self.embed.t()
+        embed = self.embed.t().to(x.dtype)
         dist = -(x.pow(2).sum(1, keepdim=True) - 2 * x @ embed +
                  embed.pow(2).sum(0, keepdim=True))
         embed_ind = dist.max(dim=-1).indices
@@ -287,7 +287,7 @@ class VectorQuantization(nn.Module):
 
     @torch.inference_mode()
     def encode(self, x: Tensor) -> Tensor:
-        x = F.normalize(x, p=2, dim=-1)
+        x = F.normalize(x.float(), p=2, dim=-1)
         embed_in = self._codebook.encode(x)
         return embed_in
 
