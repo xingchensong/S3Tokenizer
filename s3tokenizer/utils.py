@@ -14,6 +14,7 @@
 # limitations under the License.
 """Modified from https://github.com/openai/whisper/blob/main/whisper/audio.py
    Add rename_weights() & onnx2torch() & make_non_pad_mask() & mask_to_bias()
+   Copy merge_tokenized_segments() from https://github.com/Mddct/s3tokenizer-long/blob/main/example.py
 """
 
 import os
@@ -351,7 +352,7 @@ def padding(data: List[torch.Tensor]):
 
     Returns:
     -------
-        feats, feats lengths
+        feats [B, 128, T_max], feats lengths [B]
     """
     sample = data
     assert isinstance(sample, list)
@@ -361,3 +362,29 @@ def padding(data: List[torch.Tensor]):
     padded_feats = pad_sequence(feats, batch_first=True, padding_value=0)
 
     return padded_feats.transpose(1, 2), feats_lengths
+
+
+def merge_tokenized_segments(tokenized_segments, overlap, token_rate):
+    """
+    Merges tokenized outputs by keeping the middle and dropping half of the overlapped tokens.
+
+    Args:
+    - tokenized_segments (List[List[int]]): List of tokenized sequences.
+    - overlap (int): Overlapping duration in seconds (default: 4s).
+    - token_rate (int): Number of tokens per second.
+
+    Returns:
+    - List[int]: A single merged token sequence.
+    """
+    merged_tokens = []
+    overlap_tokens = (
+        overlap //
+        2) * token_rate  # Tokens corresponding to half of the overlap duration
+
+    for i, tokens in enumerate(tokenized_segments):
+        l = 0 if i == 0 else overlap_tokens
+        r = -overlap_tokens if i != len(tokenized_segments) - 1 else len(tokens)
+        # Keep only the middle part (drop overlap / 2 from both sides)
+        merged_tokens.extend(tokens[l:r])
+
+    return merged_tokens

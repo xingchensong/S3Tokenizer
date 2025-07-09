@@ -14,10 +14,11 @@ This repository undertakes a reverse engineering of the S3Tokenizer, offering:
 2. High-throughput (distributed) batch inference, achieving a ~790x speedup compared to the original inference pipeline in [[cosyvoice/tools/extract_speech_token.py]](https://github.com/FunAudioLLM/CosyVoice/blob/main/tools/extract_speech_token.py).
 3. The capability to perform online speech code extraction during SpeechLLM training.
 
-## Supported Models 🔥
-- [x] [S3Tokenizer V1 50hz](https://modelscope.cn/models/iic/CosyVoice-300M)
-- [x] [S3Tokenizer V1 25hz](https://modelscope.cn/models/iic/CosyVoice-300M-25Hz)
-- [x] [S3Tokenizer V2 25hz](https://modelscope.cn/models/iic/CosyVoice2-0.5B)
+## Supported Models 🔥 && New Features 🎉
+- [x] Model: [S3Tokenizer V1 50hz](https://modelscope.cn/models/iic/CosyVoice-300M)
+- [x] Model: [S3Tokenizer V1 25hz](https://modelscope.cn/models/iic/CosyVoice-300M-25Hz)
+- [x] Model: [S3Tokenizer V2 25hz](https://modelscope.cn/models/iic/CosyVoice2-0.5B)
+- [x] Feature: S3Tokenizer now has built-in **long audio processing** capabilities, requiring no additional operations from users!
 
 
 # Setup
@@ -39,7 +40,7 @@ for wav_path in wav_paths:
     audio = s3tokenizer.load_audio(wav_path)
     mels.append(s3tokenizer.log_mel_spectrogram(audio))
 mels, mels_lens = s3tokenizer.padding(mels)
-codes, codes_lens = tokenizer.quantize(mels.cuda(), mels_lens.cuda())
+codes, codes_lens = tokenizer.quantize(mels.cuda(), mels_lens.cuda())  # Automatically handles long audio internally!
 
 for i in range(len(wav_paths)):
     print(codes[i, :codes_lens[i].item()])
@@ -139,9 +140,9 @@ class SpeechLLM(nn.Module):
 </tr>
 </table>
 
+# Usage-4: Long Audio Processing (Built-in Automatic Processing)
 
-# TODO
-
-- [x] Usage-1: Offline batch inference
-- [x] Usage-2: Distributed offline batch inference via command-line tools
-- [x] Usage-3: Online speech code extraction
+- **Automatic Detection**: Model automatically detects audio length (>30 seconds triggers long audio processing)
+- **Sliding Window**: 30-second window with 4-second overlap, automatically segments long audio
+- **Batch Processing**: Internal batch processing of multiple segments for improved efficiency
+- **Complete Transparency**: User calling method is identical to short audio

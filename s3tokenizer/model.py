@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
 
-from .utils import make_non_pad_mask, mask_to_bias, onnx2torch
+from .utils import make_non_pad_mask, mask_to_bias, onnx2torch, merge_tokenized_segments
 
 
 @dataclass
@@ -236,7 +236,7 @@ class EuclideanCodebook(nn.Module):
 
     @torch.inference_mode()
     def quantize(self, x: Tensor) -> Tensor:
-        embed = self.embed.t()
+        embed = self.embed.t().to(x.dtype)
         dist = -(x.pow(2).sum(1, keepdim=True) - 2 * x @ embed +
                  embed.pow(2).sum(0, keepdim=True))
         embed_ind = dist.max(dim=-1).indices
@@ -287,7 +287,7 @@ class VectorQuantization(nn.Module):
 
     @torch.inference_mode()
     def encode(self, x: Tensor) -> Tensor:
-        x = F.normalize(x, p=2, dim=-1)
+        x = F.normalize(x.float(), p=2, dim=-1)
         embed_in = self._codebook.encode(x)
         return embed_in
 
@@ -306,6 +306,7 @@ class S3Tokenizer(nn.Module):
 
     def __init__(self, name: str, config: ModelConfig = ModelConfig()):
         super().__init__()
+        self.name = name  # Store model name for token_rate determination
         self.config = config
         self.encoder = AudioEncoder(
             self.config.n_mels,
@@ -324,9 +325,209 @@ class S3Tokenizer(nn.Module):
 
     @torch.inference_mode()
     def quantize(self, mel: Tensor, mel_len: Tensor) -> Tuple[Tensor, Tensor]:
-        hidden, code_len = self.encoder(mel, mel_len)
-        code = self.quantizer.encode(hidden)
-        return code, code_len
+        """
+        Quantize mel spectrogram to tokens, with automatic long audio handling.
+
+        Args:
+            mel: mel spectrogram tensor, shape (batch_size, n_mels, T)
+            mel_len: mel length tensor, shape (batch_size,)
+
+        Returns:
+            code: quantized tokens, shape (batch_size, T')
+            code_len: token length, shape (batch_size,)
+        """
+        # Check if any audio in the batch exceeds 30 seconds
+        # Assuming 16kHz sample rate and hop_length=160, 30s = 30*16000/160 = 3000 frames
+        max_frames = 3000
+
+        # Check which samples are long audio
+        long_audio_mask = mel_len > max_frames
+
+        if long_audio_mask.any():
+            # Has long audio - need special processing
+            return self._quantize_mixed_batch(mel, mel_len, long_audio_mask,
+                                              max_frames)
+        else:
+            # All short audio - use original method
+            hidden, code_len = self.encoder(mel, mel_len)
+            code = self.quantizer.encode(hidden)
+            return code, code_len
+
+    @torch.inference_mode()
+    def _quantize_mixed_batch(self, mel: Tensor, mel_len: Tensor,
+                              long_audio_mask: Tensor,
+                              max_frames: int) -> Tuple[Tensor, Tensor]:
+        """
+        Handle mixed batch with both short and long audio using unified batch processing.
+
+        Args:
+            mel: mel spectrogram tensor, shape (batch_size, n_mels, T)
+            mel_len: mel length tensor, shape (batch_size,)
+            long_audio_mask: boolean mask for long audio, shape (batch_size,)
+            max_frames: maximum frames for short audio
+
+        Returns:
+            code: quantized tokens, shape (batch_size, T')
+            code_len: token length, shape (batch_size,)
+        """
+        batch_size = mel.size(0)
+
+        # Parameters for sliding window
+        sample_rate = 16000
+        hop_length = 160  # Default hop length for mel spectrogram
+        window_size = 30  # seconds
+        overlap = 4  # seconds
+
+        # Calculate frame-based parameters
+        frames_per_window = window_size * sample_rate // hop_length  # 3000 frames
+        frames_per_overlap = overlap * sample_rate // hop_length  # 400 frames
+        frames_per_stride = frames_per_window - frames_per_overlap  # 2600 frames
+
+        # Collect all segments to process (including short and long audio segments)
+        all_segments = []
+        all_segments_len = []
+        segment_info = [
+        ]  # Record which audio each segment belongs to and whether it's long audio
+
+        # Process all audio in the batch
+        for batch_idx in range(batch_size):
+            audio_mel = mel[batch_idx]
+            audio_mel_len = mel_len[batch_idx]
+            is_long_audio = long_audio_mask[batch_idx].item()
+
+            if not is_long_audio:
+                # Short audio: process directly as a single segment
+                segment = audio_mel[:, :audio_mel_len]
+                seg_len = audio_mel_len.item()
+
+                # Pad to max_frames if necessary
+                if seg_len < frames_per_window:
+                    pad_size = frames_per_window - seg_len
+                    segment = F.pad(segment, (0, pad_size))
+
+                all_segments.append(segment)
+                all_segments_len.append(
+                    torch.tensor(seg_len, device=mel.device))
+                segment_info.append({
+                    'batch_idx': batch_idx,
+                    'is_long_audio': False,
+                    'segment_idx': 0,
+                    'total_segments': 1
+                })
+            else:
+                # Long audio: split into multiple segments
+                start = 0
+                segment_idx = 0
+                while start < audio_mel_len:
+                    end = min(start + frames_per_window, audio_mel_len)
+                    segment = audio_mel[:, start:end]
+
+                    seg_len = segment.size(1)
+                    # Pad if necessary
+                    if seg_len < frames_per_window:
+                        pad_size = frames_per_window - seg_len
+                        segment = F.pad(segment, (0, pad_size))
+
+                    all_segments.append(segment)
+                    all_segments_len.append(
+                        torch.tensor(seg_len, device=mel.device))
+                    segment_info.append({
+                        'batch_idx': batch_idx,
+                        'is_long_audio': True,
+                        'segment_idx': segment_idx,
+                        'total_segments': None  # Will be filled later
+                    })
+
+                    segment_idx += 1
+                    start += frames_per_stride
+
+                # Update total_segments info
+                total_segments = segment_idx
+                for info in segment_info:
+                    if info['batch_idx'] == batch_idx and info['is_long_audio']:
+                        info['total_segments'] = total_segments
+
+        if not all_segments:
+            # Fallback if no segments
+            return torch.zeros(batch_size,
+                               0,
+                               dtype=torch.long,
+                               device=mel.device), torch.zeros(
+                                   batch_size,
+                                   dtype=torch.long,
+                                   device=mel.device)
+
+        # Unified batch processing for all segments
+        unified_batch_mel = torch.stack(all_segments)
+        unified_batch_lens = torch.stack(all_segments_len)
+
+        # Process all segments at once
+        hidden, code_len = self.encoder(unified_batch_mel, unified_batch_lens)
+        codes = self.quantizer.encode(hidden)
+
+        # Reorganize results based on segment_info
+        results = {}  # batch_idx -> (code_tensor, code_len)
+
+        for seg_idx, info in enumerate(segment_info):
+            batch_idx = info['batch_idx']
+            is_long_audio = info['is_long_audio']
+            segment_idx = info['segment_idx']
+
+            # Get codes for current segment
+            segment_code = codes[
+                seg_idx, :code_len[seg_idx].item()].cpu().numpy().tolist()
+
+            if not is_long_audio:
+                # Short audio: use directly
+                code_tensor = torch.tensor(segment_code,
+                                           dtype=torch.long,
+                                           device=mel.device)
+                results[batch_idx] = (code_tensor, len(segment_code))
+            else:
+                # Long audio: collect all segments
+                if batch_idx not in results:
+                    results[batch_idx] = []
+                results[batch_idx].append(segment_code)
+
+        # Process long audio segment merging
+        for batch_idx in range(batch_size):
+            if long_audio_mask[batch_idx].item():
+                # Merge long audio segments
+                audio_codes = results[batch_idx]
+
+                # Determine token rate based on model name
+                if hasattr(self,
+                           'name') and self.name == "speech_tokenizer_v1":
+                    token_rate = 50
+                else:
+                    token_rate = 25
+
+                merged_codes = merge_tokenized_segments(audio_codes,
+                                                        overlap=overlap,
+                                                        token_rate=token_rate)
+
+                # Convert to tensor
+                merged_codes_tensor = torch.tensor(merged_codes,
+                                                   dtype=torch.long,
+                                                   device=mel.device)
+                results[batch_idx] = (merged_codes_tensor, len(merged_codes))
+
+        # Construct final output
+        max_code_len = max(code_info[1] for code_info in results.values())
+
+        output_codes = torch.zeros(batch_size,
+                                   max_code_len,
+                                   dtype=torch.long,
+                                   device=mel.device)
+        output_codes_len = torch.zeros(batch_size,
+                                       dtype=torch.long,
+                                       device=mel.device)
+
+        for batch_idx, (code_tensor, code_len) in results.items():
+            output_codes[batch_idx, :code_len] = code_tensor
+            output_codes_len[batch_idx] = code_len
+
+        return output_codes, output_codes_len
 
     @property
     def device(self):
