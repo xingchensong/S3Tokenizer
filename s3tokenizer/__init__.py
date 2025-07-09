@@ -28,11 +28,11 @@ from s3tokenizer.model_v2 import S3TokenizerV2
 
 from .model import S3Tokenizer
 from .utils import (load_audio, log_mel_spectrogram, make_non_pad_mask,
-                    mask_to_bias, onnx2torch, padding)
+                    mask_to_bias, onnx2torch, padding, merge_tokenized_segments)
 
 __all__ = [
     'load_audio', 'log_mel_spectrogram', 'make_non_pad_mask', 'mask_to_bias',
-    'onnx2torch', 'padding'
+    'onnx2torch', 'padding', 'merge_tokenized_segments'
 ]
 _MODELS = {
     "speech_tokenizer_v1":
