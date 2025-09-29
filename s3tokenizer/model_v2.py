@@ -96,20 +96,20 @@ class FSQCodebook(torch.nn.Module):
     @torch.inference_mode()
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         x_shape = x.shape
-        # pre-process
-        x = self.preprocess(x)
-        # quantize
-        h = self.project_down(x).float()
-        h = h.tanh()
-        h = h * 0.9990000128746033
-        h = h.round() + 1
-        # h = ((self.level - 1) * h).round()  # range [-k, k]
-        powers = torch.pow(
-            self.level,
-            torch.arange(2**self.level, device=x.device, dtype=h.dtype))
-        mu = torch.sum(h * powers.unsqueeze(0), dim=-1)
-        ind = mu.reshape(x_shape[0], x_shape[1]).int()
-        return ind
+        x = self.preprocess(x)                         # -> (B, T, F)
+        h = self.project_down(x).float()               # -> (B, T, D)
+        # 将连续值映射到 [0, L-1]
+        L = int(self.level)                            # 每维等级数
+        eps = 1e-6
+        h = torch.tanh(h)
+        h = torch.clamp(h, -1 + eps, 1 - eps)
+        h = ((h + 1.0) * (L - 1) / 2.0).round().to(torch.int64)   # digits: (B, T, D) in [0..L-1]
+        # 打包为单一索引（base-L）
+        D = h.size(-1)
+        powers = (L ** torch.arange(D, device=h.device, dtype=torch.int64))  # (D,)
+        idx = (h * powers.unsqueeze(0)).sum(dim=-1)  
+        idx = idx.reshape(x_shape[0], x_shape[1]).int()                                     # (B, T)
+        return idx
 
     @torch.inference_mode()
     def decode(self, embed_ind: torch.Tensor) -> torch.Tensor:
