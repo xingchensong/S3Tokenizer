@@ -325,13 +325,16 @@ class AudioEncoderV2(torch.nn.Module):
         x_len: torch.Tensor, shape = (batch_size,)
             length of each audio in x
         """
-        mask = make_non_pad_mask(x_len).unsqueeze(1)
+        T = x.shape[-1]
+        mask = make_non_pad_mask(x_len, T).unsqueeze(1)
         x = torch.nn.functional.gelu(self.conv1(x * mask))
         x_len = (x_len + 2 - 1 * (3 - 1) - 1) // self.stride + 1
-        mask = make_non_pad_mask(x_len).unsqueeze(1)
+        x_slen = (T + 2 - 1 * (3 - 1) - 1) // self.stride + 1
+        mask = make_non_pad_mask(x_len, x_slen).unsqueeze(1)
         x = torch.nn.functional.gelu(self.conv2(x * mask))
         x_len = (x_len + 2 - 1 * (3 - 1) - 1) // 2 + 1
-        mask = make_non_pad_mask(x_len).unsqueeze(1)
+        x_slen = (x_slen + 2 - 1 * (3 - 1) - 1) // self.stride + 1
+        mask = make_non_pad_mask(x_len, x_slen).unsqueeze(1)
         x = x.permute(0, 2, 1)  # (B, T // 2, n_state)
         freqs_cis = self.freqs_cis.to(x.device)
         mask_pad = mask.transpose(1, 2)
