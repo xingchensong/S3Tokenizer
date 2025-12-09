@@ -19,8 +19,7 @@ import torch
 from einops import rearrange
 
 from s3tokenizer.model import Conv1d, LayerNorm, Linear, MultiHeadAttention
-from s3tokenizer.utils import (make_non_pad_mask, mask_to_bias,
-                               merge_tokenized_segments, onnx2torch)
+from s3tokenizer.utils import make_non_pad_mask, mask_to_bias, onnx2torch, merge_tokenized_segments
 
 
 @dataclass
@@ -527,34 +526,9 @@ class S3TokenizerV2(torch.nn.Module):
         unified_batch_mel = torch.stack(all_segments)
         unified_batch_lens = torch.stack(all_segments_len)
 
-        # Process segments in mini-batches to avoid OOM
-        num_segments = unified_batch_mel.size(0)
-        # Use a conservative inference batch size or the original batch size
-        inference_batch_size = max(batch_size, 16)
-
-        all_codes_list = []
-        all_code_lens_list = []
-
-        for i in range(0, num_segments, inference_batch_size):
-            end_idx = min(i + inference_batch_size, num_segments)
-
-            mini_batch_mel = unified_batch_mel[i:end_idx]
-            mini_batch_lens = unified_batch_lens[i:end_idx]
-
-            hidden, code_len = self.encoder(mini_batch_mel, mini_batch_lens)
-            mini_batch_codes = self.quantizer.encode(hidden)
-
-            all_codes_list.append(mini_batch_codes)
-            all_code_lens_list.append(code_len)
-
-        # Concatenate results
-        if all_codes_list:
-            codes = torch.cat(all_codes_list, dim=0)
-            code_len = torch.cat(all_code_lens_list, dim=0)
-        else:
-            # Should not happen given previous check, but for safety
-            codes = torch.zeros(0, 0, dtype=torch.long, device=mel.device)
-            code_len = torch.zeros(0, dtype=torch.long, device=mel.device)
+        # Process all segments at once
+        hidden, code_len = self.encoder(unified_batch_mel, unified_batch_lens)
+        codes = self.quantizer.encode(hidden)
 
         # Reorganize results based on segment_info
         results = {}  # batch_idx -> (code_tensor, code_len)
