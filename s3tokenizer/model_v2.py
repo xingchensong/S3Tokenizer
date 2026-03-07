@@ -341,14 +341,6 @@ class AudioEncoderV2(torch.nn.Module):
         mask_pad = mask.transpose(1, 2)
         mask = mask_to_bias(mask, x.dtype)
 
-        tmp = torch.view_as_real(freqs_cis)
-        cos, sin = tmp[:, :, 0], tmp[:, :, 1]
-
-        cos = torch.cat((cos, cos), dim=-1)
-        sin = torch.cat((sin, sin), dim=-1)
-        cos = cos.unsqueeze(0).unsqueeze(2)
-        sin = sin.unsqueeze(0).unsqueeze(2)
-
         for block in self.blocks:
             x = block(x, mask.unsqueeze(1), mask_pad, freqs_cis[:x.size(1)])
 
