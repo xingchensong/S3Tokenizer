@@ -102,13 +102,17 @@ class FSQCodebook(torch.nn.Module):
         h = self.project_down(x).float()
         h = h.tanh()
         h = h * 0.9990000128746033
-        h = h.round() + 1
-        # h = ((self.level - 1) * h).round()  # range [-k, k]
-        powers = torch.pow(
-            self.level,
-            torch.arange(2**self.level, device=x.device, dtype=h.dtype))
+        h = (h.round() + 1).to(torch.int64)
+        # Use integer arithmetic for code packing. Floating-point pow() on some
+        # CUDA stacks produces values like 242.99998 for 3**5, and the final
+        # int() cast truncates the packed token id by 1.
+        powers = torch.tensor(
+            [self.level**i for i in range(2**self.level)],
+            device=x.device,
+            dtype=torch.int64,
+        )
         mu = torch.sum(h * powers.unsqueeze(0), dim=-1)
-        ind = mu.reshape(x_shape[0], x_shape[1]).int()
+        ind = mu.reshape(x_shape[0], x_shape[1]).to(torch.int32)
         return ind
 
     @torch.inference_mode()
