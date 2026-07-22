@@ -18,6 +18,7 @@ from typing import Optional, Tuple
 import torch
 from einops import rearrange
 
+from s3tokenizer.chunking import long_audio_frame_ranges
 from s3tokenizer.model import Conv1d, LayerNorm, Linear, MultiHeadAttention
 from s3tokenizer.utils import make_non_pad_mask, mask_to_bias, onnx2torch, merge_tokenized_segments
 
@@ -481,10 +482,11 @@ class S3TokenizerV2(torch.nn.Module):
                 })
             else:
                 # Long audio: split into multiple segments
-                start = 0
                 segment_idx = 0
-                while start < audio_mel_len:
-                    end = min(start + frames_per_window, audio_mel_len)
+                for start, end in long_audio_frame_ranges(
+                        int(audio_mel_len.item()),
+                        window_frames=frames_per_window,
+                        stride_frames=frames_per_stride):
                     segment = audio_mel[:, start:end]
 
                     seg_len = segment.size(1)
@@ -505,7 +507,6 @@ class S3TokenizerV2(torch.nn.Module):
                     })
 
                     segment_idx += 1
-                    start += frames_per_stride
 
                 # Update total_segments info
                 total_segments = segment_idx
