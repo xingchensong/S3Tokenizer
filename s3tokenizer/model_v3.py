@@ -246,6 +246,9 @@ class S3TokenizerV3(torch.nn.Module):
                         'total_segments': None
                     })
                     segment_idx += 1
+                    # Stop once the current window covers the input tail.
+                    if end >= audio_mel_len:
+                        break
                     start += frames_per_stride
                 total_segments = segment_idx
                 for info in segment_info:
